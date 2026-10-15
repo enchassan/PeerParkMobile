@@ -129,7 +129,6 @@ export default function ExploreScreen() {
 
     setSearching(true);
     try {
-      // Append Lahore / Pakistan for high-relevance local results
       const query = `${searchQuery.trim()}, Lahore, Pakistan`;
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
         query
@@ -156,7 +155,6 @@ export default function ExploreScreen() {
         setMapRegion(newRegion);
         mapRef.current?.animateToRegion(newRegion, 1000);
 
-        // Fetch spots around newly searched destination
         fetchNearbySpots(targetLat, targetLng, selectedRadius, maxPrice);
       } else {
         Alert.alert('Location Not Found', 'Could not find the specified area in Lahore.');
@@ -181,10 +179,10 @@ export default function ExploreScreen() {
     setBookingSubmitting(true);
     try {
       const now = new Date();
-      const checkinTime = new Date(now.getTime() + 10 * 60 * 1000); // 10 minutes from now
+      const checkinTime = new Date(now.getTime() + 10 * 60 * 1000); // 10 mins from now
       const checkoutTime = new Date(checkinTime.getTime() + bookingHours * 60 * 60 * 1000);
 
-      const response = await api.post('/bookings/request', {
+      await api.post('/bookings/request', {
         spot_id: selectedSpot._id,
         scheduled_checkin: checkinTime.toISOString(),
         scheduled_checkout: checkoutTime.toISOString(),
@@ -195,8 +193,16 @@ export default function ExploreScreen() {
         `Your reservation for ${selectedSpot.street_address} (${bookingHours} hrs) has been submitted. The host will review and approve it shortly.`,
         [
           {
-            text: 'OK',
+            text: 'View in My Bookings',
+            onPress: () => {
+              setSelectedSpot(null);
+              router.push('/bookings' as any);
+            },
+          },
+          {
+            text: 'Stay on Map',
             onPress: () => setSelectedSpot(null),
+            style: 'cancel',
           },
         ]
       );
@@ -274,19 +280,28 @@ export default function ExploreScreen() {
 
       {/* 2. Top Navigation & Search Bar */}
       <View className="absolute top-12 left-0 right-0 px-4">
-        {/* Quick Bar: Logo & Logout */}
+        {/* Quick Bar: Logo, My Bookings, & Sign Out */}
         <View className="flex-row items-center justify-between mb-3 px-1">
           <View className="flex-row items-center gap-2">
             <View className="h-2.5 w-2.5 rounded-full bg-[#10B981]" />
             <Text className="text-white font-extrabold text-lg tracking-wide">PeerPark</Text>
           </View>
 
-          <TouchableOpacity
-            onPress={handleLogout}
-            className="bg-[#1A2235]/90 px-3 py-1.5 rounded-xl border border-gray-800"
-          >
-            <Text className="text-gray-300 text-xs font-semibold">Sign Out</Text>
-          </TouchableOpacity>
+          <View className="flex-row items-center gap-2">
+            <TouchableOpacity
+              onPress={() => router.push('/bookings' as any)}
+              className="bg-[#10B981]/20 px-3 py-1.5 rounded-xl border border-[#10B981]/40"
+            >
+              <Text className="text-[#10B981] text-xs font-bold">📋 My Bookings</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleLogout}
+              className="bg-[#1A2235]/90 px-3 py-1.5 rounded-xl border border-gray-800"
+            >
+              <Text className="text-gray-300 text-xs font-semibold">Sign Out</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Search Input Container */}
