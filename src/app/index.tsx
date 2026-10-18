@@ -86,8 +86,8 @@ export default function AuthScreen() {
       }
     } catch (error: any) {
       Alert.alert(
-        'Login Failed',
-        error.response?.data?.message || 'Invalid email or password.'
+        'Login Error Diagnostic',
+        `Target URL: ${api.defaults.baseURL}\n\nError: ${error.message}\nServer Response: ${error.response?.data?.message || 'None (Connection dropped)'}`
       );
     } finally {
       setLoading(false);
@@ -153,9 +153,8 @@ export default function AuthScreen() {
       }
     } catch (error: any) {
       Alert.alert(
-        'Registration Failed',
-        error.response?.data?.message || 'Could not complete registration. Please try again.'
-      );
+        'Register Error Diagnostic',
+        `Target URL: ${api.defaults.baseURL}\n\nError: ${error.message}\nServer Response: ${error.response?.data?.message || 'None (Connection dropped)'}`);
     } finally {
       setLoading(false);
     }
