@@ -34,6 +34,8 @@ interface Booking {
   actual_checkin?: string | null;
   actual_checkout?: string | null;
   total_fee: number;
+  rating?: number;
+  payment_gateway?: string;
   booking_status: 'Pending' | 'Confirmed' | 'Active_Parking' | 'Completed' | 'Declined' | 'Expired';
   createdAt: string;
 }
@@ -41,21 +43,20 @@ interface Booking {
 export default function BookingsScreen() {
   const router = useRouter();
 
-  // State
   const [tab, setTab] = useState<TabType>('active');
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [currentUserId, setCurrentUserId] = useState<string>('');
 
-  // Active Parking Timer State
+  // Timer State
   const [secondsElapsed, setSecondsElapsed] = useState<number>(0);
   const [activeSession, setActiveSession] = useState<Booking | null>(null);
 
   // Checkout Modal State
   const [showCheckoutModal, setShowCheckoutModal] = useState<boolean>(false);
   const [checkoutBooking, setCheckoutBooking] = useState<Booking | null>(null);
-  const [selectedGateway, setSelectedGateway] = useState<PaymentGateway>('JazzCash');
+  const [selectedGateway, setSelectedGateway] = useState<PaymentGateway>('EasyPaisa');
   const [rating, setRating] = useState<number>(5);
   const [processingPayment, setProcessingPayment] = useState<boolean>(false);
 
@@ -70,7 +71,6 @@ export default function BookingsScreen() {
       const response = await api.get('/bookings');
       const allBookings: Booking[] = response.data?.bookings || [];
 
-      // Filter bookings belonging to this driver
       const myBookings = allBookings.filter((b: any) => {
         const dId = b.driver_id?._id || b.driver_id;
         return uid ? dId === uid : true;
@@ -78,15 +78,11 @@ export default function BookingsScreen() {
 
       setBookings(myBookings);
 
-      // Check if there is an ongoing parking session
-      const currentActive = myBookings.find(
-        (b) => b.booking_status === 'Active_Parking'
-      );
+      const currentActive = myBookings.find((b) => b.booking_status === 'Active_Parking');
       if (currentActive && currentActive.actual_checkin) {
         setActiveSession(currentActive);
         const startTime = new Date(currentActive.actual_checkin).getTime();
-        const now = Date.now();
-        setSecondsElapsed(Math.max(0, Math.floor((now - startTime) / 1000)));
+        setSecondsElapsed(Math.max(0, Math.floor((Date.now() - startTime) / 1000)));
       } else {
         setActiveSession(null);
       }
@@ -105,13 +101,11 @@ export default function BookingsScreen() {
   // 2. Active Session Ticking Timer
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null;
-
     if (activeSession) {
       interval = setInterval(() => {
         setSecondsElapsed((prev) => prev + 1);
       }, 1000);
     }
-
     return () => {
       if (interval) clearInterval(interval);
     };
@@ -131,60 +125,62 @@ export default function BookingsScreen() {
     loadBookings();
   };
 
-  // 3. Driver Check-In Trigger
+  // 3. Driver Check-In Trigger (Starts timer immediately at 00:00:00)
   const handleCheckIn = async (bookingId: string) => {
     try {
+      setSecondsElapsed(0);
       const response = await api.patch(`/bookings/${bookingId}/checkin`);
-      Alert.alert(
-        'Checked In!',
-        'Your parking session has started. The active duration timer is running.'
+      const updated = response.data?.booking;
+
+      setActiveSession(updated);
+      setBookings((prev) =>
+        prev.map((b) => (b._id === bookingId ? { ...b, booking_status: 'Active_Parking', actual_checkin: new Date().toISOString() } : b))
       );
-      loadBookings();
     } catch (error: any) {
       Alert.alert('Check-In Failed', error.response?.data?.message || 'Could not check in.');
     }
   };
 
-  // 4. Driver Check-Out Trigger
-  const handleCheckOut = async (booking: Booking) => {
-    try {
-      await api.patch(`/bookings/${booking._id}/checkout`);
-      setCheckoutBooking(booking);
-      setShowCheckoutModal(true);
-      loadBookings();
-    } catch (error: any) {
-      Alert.alert('Check-Out Failed', error.response?.data?.message || 'Could not check out.');
-    }
+  // 4. Open Checkout Modal
+  const handleCheckOut = (booking: Booking) => {
+    setCheckoutBooking(booking);
+    setShowCheckoutModal(true);
   };
 
-  // 5. Final Payment Authorization & Invoicing
+  // 5. Final Payment & Rating Settlement
   const handleConfirmPayment = async () => {
+    if (!checkoutBooking) return;
+
     setProcessingPayment(true);
     try {
-      // Simulating M-Wallet USSD clearing
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await api.patch(`/bookings/${checkoutBooking._id}/checkout`, {
+        rating,
+        payment_gateway: selectedGateway,
+      });
 
       Alert.alert(
         'Payment Complete!',
-        `Rs. ${checkoutBooking?.total_fee} authorized via ${selectedGateway}. Digital invoice generated and escrow released to the host. Thank you for rating ${rating} stars!`,
+        `Rs. ${checkoutBooking.total_fee} authorized via ${selectedGateway}. Digital invoice generated and escrow released to the host. Rating of ${rating} stars saved!`,
         [
           {
             text: 'OK',
             onPress: () => {
               setShowCheckoutModal(false);
               setCheckoutBooking(null);
+              setActiveSession(null);
               setTab('completed');
               loadBookings();
             },
           },
         ]
       );
+    } catch (err: any) {
+      Alert.alert('Checkout Error', err.response?.data?.message || 'Failed to complete checkout.');
     } finally {
       setProcessingPayment(false);
     }
   };
 
-  // Filter Bookings by Tab
   const activeList = bookings.filter(
     (b) => b.booking_status === 'Confirmed' || b.booking_status === 'Active_Parking'
   );
@@ -274,7 +270,6 @@ export default function BookingsScreen() {
                       key={b._id}
                       className="bg-[#1A2235] p-5 rounded-3xl border border-gray-800 shadow-xl"
                     >
-                      {/* Top status & badge */}
                       <View className="flex-row items-center justify-between mb-3">
                         <View className="flex-row items-center gap-2">
                           <View
@@ -296,7 +291,6 @@ export default function BookingsScreen() {
                         </Text>
                       </View>
 
-                      {/* Spot Details */}
                       <Text className="text-white text-lg font-bold">
                         {b.spot_id?.street_address || 'Designated Parking Spot'}
                       </Text>
@@ -304,7 +298,7 @@ export default function BookingsScreen() {
                         Host: {b.host_id?.full_name || 'Verified Host'} • {b.host_id?.phone_number}
                       </Text>
 
-                      {/* Live Ticking Timer Display (Figure 42/53) */}
+                      {/* Live Ticking Timer Display */}
                       {isParkingNow && (
                         <View className="my-5 bg-[#0B0F19] py-5 px-4 rounded-2xl border border-gray-800 items-center">
                           <Text className="text-gray-400 text-xs uppercase tracking-widest font-semibold mb-1">
@@ -345,7 +339,7 @@ export default function BookingsScreen() {
             </View>
           )}
 
-          {/* TAB 2: PENDING BOOKINGS (Figure 45) */}
+          {/* TAB 2: PENDING BOOKINGS */}
           {tab === 'pending' && (
             <View className="space-y-4">
               {pendingList.length === 0 ? (
@@ -386,7 +380,7 @@ export default function BookingsScreen() {
             </View>
           )}
 
-          {/* TAB 3: COMPLETED BOOKINGS (Figure 46) */}
+          {/* TAB 3: COMPLETED BOOKINGS (With real ratings & payment gateway) */}
           {tab === 'completed' && (
             <View className="space-y-4">
               {completedList.length === 0 ? (
@@ -405,7 +399,7 @@ export default function BookingsScreen() {
                           {b.spot_id?.street_address || 'Parking Location'}
                         </Text>
                         <Text className="text-gray-400 text-xs mt-1">
-                          {new Date(b.createdAt).toLocaleDateString()}
+                          {new Date(b.createdAt).toLocaleDateString()} • {b.payment_gateway || 'EasyPaisa'}
                         </Text>
                       </View>
                       <View className="items-end">
@@ -413,7 +407,9 @@ export default function BookingsScreen() {
                           Rs. {b.total_fee}
                         </Text>
                         <View className="flex-row items-center gap-1 mt-1">
-                          <Text className="text-amber-400 text-xs">★ 5.0</Text>
+                          <Text className="text-amber-400 text-xs font-bold">
+                            ★ {b.rating || 5}.0
+                          </Text>
                         </View>
                       </View>
                     </View>
@@ -425,11 +421,10 @@ export default function BookingsScreen() {
         </ScrollView>
       </View>
 
-      {/* 6. Checkout & Invoice Settlement Modal (Figure 43/52) */}
+      {/* 6. Checkout & Invoice Settlement Modal */}
       <Modal visible={showCheckoutModal} animationType="slide" transparent>
         <View className="flex-1 justify-end bg-black/75">
           <View className="bg-[#1A2235] p-6 rounded-t-3xl border-t border-gray-800">
-            {/* Success Icon */}
             <View className="items-center mb-4">
               <View className="h-14 w-14 rounded-full bg-[#10B981]/20 items-center justify-center border border-[#10B981]/40 mb-2">
                 <Text className="text-2xl">✓</Text>
@@ -440,7 +435,7 @@ export default function BookingsScreen() {
               </Text>
             </View>
 
-            {/* Invoice Breakdown Card */}
+            {/* Invoice Breakdown */}
             <View className="bg-[#0B0F19] p-4 rounded-2xl border border-gray-800 mb-5">
               <Text className="text-gray-400 text-xs font-semibold uppercase mb-3">
                 Invoice Summary
@@ -461,7 +456,7 @@ export default function BookingsScreen() {
               </View>
             </View>
 
-            {/* Microfinance Gateway Selector */}
+            {/* Mobile Wallet Selector */}
             <Text className="text-gray-300 text-xs font-semibold uppercase mb-2">
               Pay With Mobile Wallet
             </Text>
@@ -487,9 +482,9 @@ export default function BookingsScreen() {
               ))}
             </View>
 
-            {/* Star Rating Selector */}
+            {/* Interactive Star Rating */}
             <View className="items-center mb-6">
-              <Text className="text-gray-400 text-xs mb-2">Rate your Host</Text>
+              <Text className="text-gray-400 text-xs mb-2">Rate your Host ({rating} Stars)</Text>
               <View className="flex-row gap-3">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <TouchableOpacity key={star} onPress={() => setRating(star)}>
