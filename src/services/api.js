@@ -1,7 +1,7 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = 'https://peerpark-api.loca.lt';
+const API_URL = 'http://192.168.1.4:5000/api';
 
 const api = axios.create({
   baseURL: API_URL,
