@@ -14,7 +14,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from '../services/storage';
 import * as Location from 'expo-location';
 import axios from 'axios';
 import api from '../services/api';
@@ -74,7 +74,7 @@ export default function HostScreen() {
   // 1. Load Host Profile & Data
   const loadHostData = useCallback(async () => {
     try {
-      const storedUserData = await SecureStore.getItemAsync('userData');
+      const storedUserData = await storage.getItem('userData');
       const user = storedUserData ? JSON.parse(storedUserData) : null;
       setHostUser(user);
 
@@ -237,9 +237,9 @@ export default function HostScreen() {
 
   // 6. Logout
   const handleLogout = async () => {
-    await SecureStore.deleteItemAsync('userToken');
-    await SecureStore.deleteItemAsync('userRole');
-    await SecureStore.deleteItemAsync('userData');
+    await storage.removeItem('userToken');
+    await storage.removeItem('userRole');
+    await storage.removeItem('userData');
     router.replace('/' as any);
   };
 

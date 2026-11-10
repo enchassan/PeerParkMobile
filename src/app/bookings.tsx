@@ -10,7 +10,7 @@ import {
   RefreshControl,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from '../services/storage';
 import api from '../services/api';
 
 type TabType = 'active' | 'pending' | 'completed';
@@ -63,7 +63,7 @@ export default function BookingsScreen() {
   // 1. Fetch Bookings for Current Driver
   const loadBookings = useCallback(async () => {
     try {
-      const storedUserData = await SecureStore.getItemAsync('userData');
+      const storedUserData = await storage.getItem('userData');
       const user = storedUserData ? JSON.parse(storedUserData) : null;
       const uid = user?._id || user?.id || '';
       setCurrentUserId(uid);
