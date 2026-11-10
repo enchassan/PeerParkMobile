@@ -8,6 +8,7 @@ import {
   Modal,
   ScrollView,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { storage } from '../services/storage';
@@ -147,7 +148,7 @@ export default function BookingsScreen() {
     setShowCheckoutModal(true);
   };
 
-  // 5. Final Payment & Rating Settlement
+  // 5. Final Payment & Rating Settlement (Web + Mobile Compatible)
   const handleConfirmPayment = async () => {
     if (!checkoutBooking) return;
 
@@ -158,24 +159,31 @@ export default function BookingsScreen() {
         payment_gateway: selectedGateway,
       });
 
-      Alert.alert(
-        'Payment Complete!',
-        `Rs. ${checkoutBooking.total_fee} authorized via ${selectedGateway}. Digital invoice generated and escrow released to the host. Rating of ${rating} stars saved!`,
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              setShowCheckoutModal(false);
-              setCheckoutBooking(null);
-              setActiveSession(null);
-              setTab('completed');
-              loadBookings();
-            },
-          },
-        ]
-      );
+      // 1. Immediately close modal and switch tab
+      setShowCheckoutModal(false);
+      const fee = checkoutBooking.total_fee;
+      setCheckoutBooking(null);
+      setActiveSession(null);
+      setTab('completed');
+
+      // 2. Refresh bookings list
+      await loadBookings();
+
+      // 3. Show notification
+      const successMessage = `Payment Complete!\nRs. ${fee} authorized via ${selectedGateway}. Rating of ${rating} stars saved!`;
+      
+      if (Platform.OS === 'web') {
+        window.alert(successMessage);
+      } else {
+        Alert.alert('Payment Complete!', successMessage);
+      }
     } catch (err: any) {
-      Alert.alert('Checkout Error', err.response?.data?.message || 'Failed to complete checkout.');
+      const msg = err.response?.data?.message || 'Failed to complete checkout.';
+      if (Platform.OS === 'web') {
+        window.alert('Checkout Error: ' + msg);
+      } else {
+        Alert.alert('Checkout Error', msg);
+      }
     } finally {
       setProcessingPayment(false);
     }

@@ -10,7 +10,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from '../services/storage';
 import axios from 'axios';
 import api from '../services/api';
 
@@ -88,8 +88,9 @@ export default function ExploreWebScreen() {
   };
 
   const handleLogout = async () => {
-    await SecureStore.deleteItemAsync('userToken');
-    await SecureStore.deleteItemAsync('userRole');
+    await storage.deleteItem('userToken');
+    await storage.deleteItem('userRole');
+    await storage.deleteItem('userData');
     router.replace('/' as any);
   };
 

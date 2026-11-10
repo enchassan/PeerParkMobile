@@ -12,7 +12,7 @@ import {
 import MapView, { Marker, UrlTile, Polyline, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from '../services/storage';
 import axios from 'axios';
 import api from '../services/api';
 
@@ -262,9 +262,9 @@ export default function ExploreScreen() {
 
   // 7. Sign Out
   const handleLogout = async () => {
-    await SecureStore.deleteItemAsync('userToken');
-    await SecureStore.deleteItemAsync('userRole');
-    await SecureStore.deleteItemAsync('userData');
+    await storage.deleteItem('userToken');
+    await storage.deleteItem('userRole');
+    await storage.deleteItem('userData');
     router.replace('/' as any);
   };
 

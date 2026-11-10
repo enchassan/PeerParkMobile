@@ -237,9 +237,9 @@ export default function HostScreen() {
 
   // 6. Logout
   const handleLogout = async () => {
-    await storage.removeItem('userToken');
-    await storage.removeItem('userRole');
-    await storage.removeItem('userData');
+    await storage.deleteItem('userToken');
+    await storage.deleteItem('userRole');
+    await storage.deleteItem('userData');
     router.replace('/' as any);
   };
 
