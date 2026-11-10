@@ -64,6 +64,14 @@ export default function ExploreScreen() {
   const [spots, setSpots] = useState<ParkingSpot[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<ParkingSpot | null>(null);
 
+  // Spot Availability Schedule State
+  const [spotAvailability, setSpotAvailability] = useState<{
+    isOccupied: boolean;
+    badgeText: string;
+    nextFreeTime: string | null;
+  } | null>(null);
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
+
   // OSRM Routing State (FR-07)
   const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
   const [routeMeta, setRouteMeta] = useState<RouteMeta | null>(null);
@@ -74,14 +82,17 @@ export default function ExploreScreen() {
   const [selectedRadius, setSelectedRadius] = useState<number>(15);
   const [maxPrice, setMaxPrice] = useState<number>(500);
 
-// Booking State
+  // Booking State
   const [arrivalOffsetHours, setArrivalOffsetHours] = useState<number>(0); // 0 = Now, 1 = +1hr, 2 = +2hr, etc.
   const [bookingHours, setBookingHours] = useState<number>(2);
   const [bookingSubmitting, setBookingSubmitting] = useState(false);
 
   // Helper to format arrival and departure times
   const getReservationTimes = () => {
-    const startMs = Date.now() + arrivalOffsetHours * 60 * 60 * 1000 + (arrivalOffsetHours === 0 ? 10 * 60 * 1000 : 0);
+    const startMs =
+      Date.now() +
+      arrivalOffsetHours * 60 * 60 * 1000 +
+      (arrivalOffsetHours === 0 ? 10 * 60 * 1000 : 0);
     const start = new Date(startMs);
     const end = new Date(start.getTime() + bookingHours * 60 * 60 * 1000);
 
@@ -95,6 +106,7 @@ export default function ExploreScreen() {
       endTimeStr: formatTime(end),
     };
   };
+
   // 1. Initialize Location & Spots
   useEffect(() => {
     (async () => {
@@ -105,7 +117,6 @@ export default function ExploreScreen() {
           const lat = loc.coords.latitude;
           const lng = loc.coords.longitude;
 
-          // Save your real device location
           setUserLocation({ latitude: lat, longitude: lng });
 
           const newReg = {
@@ -143,12 +154,25 @@ export default function ExploreScreen() {
     }
   };
 
-  // 3. OSRM Route Calculation (FR-07) - Always starts from user's REAL location
+  // 3. Fetch Live Spot Availability Schedule
+  const loadSpotSchedule = async (spotId: string) => {
+    setLoadingSchedule(true);
+    try {
+      const res = await api.get(`/spots/${spotId}/schedule`);
+      setSpotAvailability(res.data);
+    } catch (err) {
+      setSpotAvailability({ isOccupied: false, badgeText: '🟢 Available Now', nextFreeTime: null });
+    } finally {
+      setLoadingSchedule(false);
+    }
+  };
+
+  // 4. OSRM Route Calculation (FR-07)
   const fetchDrivingRoute = async (spot: ParkingSpot) => {
     setFetchingRoute(true);
     try {
-      const startLng = userLocation.longitude; // <-- REAL GPS
-      const startLat = userLocation.latitude;  // <-- REAL GPS
+      const startLng = userLocation.longitude;
+      const startLat = userLocation.latitude;
       const endLng = spot.location.coordinates[0];
       const endLat = spot.location.coordinates[1];
 
@@ -169,7 +193,6 @@ export default function ExploreScreen() {
           durationMins: Math.max(1, Math.round(route.duration / 60)),
         });
 
-        // Fit map view to show entire polyline
         mapRef.current?.fitToCoordinates(points, {
           edgePadding: { top: 120, right: 60, bottom: 280, left: 60 },
           animated: true,
@@ -187,7 +210,7 @@ export default function ExploreScreen() {
     setRouteMeta(null);
   };
 
-  // 4. Address Search via Nominatim
+  // 5. Address Search via Nominatim
   const handleAddressSearch = async () => {
     if (!searchQuery.trim()) return;
 
@@ -213,7 +236,6 @@ export default function ExploreScreen() {
           longitudeDelta: 0.05,
         };
 
-        // Pan map to search area WITHOUT overwriting your device GPS!
         setMapRegion(newRegion);
         mapRef.current?.animateToRegion(newRegion, 1000);
         clearRoute();
@@ -229,13 +251,13 @@ export default function ExploreScreen() {
     }
   };
 
-  // 5. Apply Filters
+  // 6. Apply Filters
   const handleApplyFilters = () => {
     setShowFilterModal(false);
     fetchNearbySpots(userLocation.latitude, userLocation.longitude, selectedRadius, maxPrice);
   };
 
-  // 6. Submit Booking with Selected Arrival Slot
+  // 7. Submit Booking with Selected Arrival Slot
   const handleBookSpot = async () => {
     if (!selectedSpot) return;
 
@@ -278,7 +300,7 @@ export default function ExploreScreen() {
     }
   };
 
-  // 7. Sign Out
+  // 8. Sign Out
   const handleLogout = async () => {
     await storage.deleteItem('userToken');
     await storage.deleteItem('userRole');
@@ -336,6 +358,7 @@ export default function ExploreScreen() {
               onPress={(e) => {
                 e.stopPropagation();
                 setSelectedSpot(spot);
+                loadSpotSchedule(spot._id);
                 fetchDrivingRoute(spot);
               }}
             >
@@ -409,7 +432,7 @@ export default function ExploreScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Route Info Badge (When OSRM Route is active) */}
+        {/* Route Info Badge */}
         {routeMeta ? (
           <View style={styles.routePill}>
             <Text style={styles.routePillText}>
@@ -428,7 +451,7 @@ export default function ExploreScreen() {
         )}
       </View>
 
-      {/* 3. Spot Details & Booking Bottom Sheet with Arrival Slot Picker */}
+      {/* 3. Spot Details & Booking Bottom Sheet */}
       {selectedSpot && (
         <View style={styles.bottomSheetContainer}>
           <View style={styles.bottomSheetCard}>
@@ -450,7 +473,42 @@ export default function ExploreScreen() {
               </View>
             </View>
 
-            {/* 1. Arrival Time Slot Selector */}
+            {/* Live Availability Status Badge */}
+            <View style={{ marginBottom: 10 }}>
+              {loadingSchedule ? (
+                <ActivityIndicator size="small" color="#10B981" style={{ alignSelf: 'flex-start' }} />
+              ) : (
+                <View
+                  style={{
+                    alignSelf: 'flex-start',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    backgroundColor: spotAvailability?.isOccupied ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: spotAvailability?.isOccupied ? '#F59E0B' : '#10B981',
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: spotAvailability?.isOccupied ? '#FBBF24' : '#10B981',
+                      fontSize: 12,
+                      fontWeight: '700',
+                    }}
+                  >
+                    {spotAvailability?.badgeText || '🟢 Available Now'}
+                  </Text>
+                  {spotAvailability?.nextFreeTime && (
+                    <Text style={{ color: '#9CA3AF', fontSize: 11 }}>• {spotAvailability.nextFreeTime}</Text>
+                  )}
+                </View>
+              )}
+            </View>
+
+            {/* Arrival Time Slot Selector */}
             <View style={{ marginBottom: 10, paddingTop: 8, borderTopWidth: 1, borderColor: '#374151' }}>
               <Text style={{ color: '#9CA3AF', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginBottom: 6 }}>
                 Arrival Time:
@@ -489,7 +547,7 @@ export default function ExploreScreen() {
               </View>
             </View>
 
-            {/* 2. Duration Selector */}
+            {/* Duration Selector */}
             <View style={styles.durationRow}>
               <Text style={styles.durationLabel}>Duration:</Text>
               <View style={styles.durationControls}>
@@ -511,7 +569,7 @@ export default function ExploreScreen() {
               </View>
             </View>
 
-            {/* 3. Live Schedule & Total Fee Preview */}
+            {/* Live Schedule & Total Fee Preview */}
             <View style={styles.totalPreviewBox}>
               <View>
                 <Text style={{ color: '#9CA3AF', fontSize: 10, textTransform: 'uppercase' }}>Time Window</Text>
@@ -849,7 +907,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   spotAddressText: {
     color: '#FFFFFF',
