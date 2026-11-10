@@ -11,8 +11,9 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from '../services/storage';
 import api from '../services/api';
+
 
 type AuthMode = 'login' | 'register';
 type UserRole = 'Driver' | 'Host';
@@ -37,8 +38,8 @@ export default function AuthScreen() {
   useEffect(() => {
     const checkExistingSession = async () => {
       try {
-        const token = await SecureStore.getItemAsync('userToken');
-        const savedRole = await SecureStore.getItemAsync('userRole');
+        const token = await storage.getItem('userToken');
+        const savedRole = await storage.getItem('userRole');
 
         if (token && savedRole) {
           if (savedRole === 'Host') {
@@ -74,9 +75,9 @@ export default function AuthScreen() {
 
       const { token, user } = response.data;
       if (token && user) {
-        await SecureStore.setItemAsync('userToken', token);
-        await SecureStore.setItemAsync('userRole', user.role);
-        await SecureStore.setItemAsync('userData', JSON.stringify(user));
+        await storage.setItem('userToken', token);
+        await storage.setItem('userRole', user.role);
+        await storage.setItem('userData', JSON.stringify(user));
 
         if (user.role === 'Host') {
           router.replace('/host' as any);
@@ -128,9 +129,9 @@ export default function AuthScreen() {
       const { token, user } = response.data;
 
       if (token && user) {
-        await SecureStore.setItemAsync('userToken', token);
-        await SecureStore.setItemAsync('userRole', user.role || role);
-        await SecureStore.setItemAsync('userData', JSON.stringify(user));
+        await storage.setItem('userToken', token);
+        await storage.setItem('userRole', user.role || role);
+        await storage.setItem('userData', JSON.stringify(user));
 
         Alert.alert(
           'Account Created',
