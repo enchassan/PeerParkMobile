@@ -74,10 +74,27 @@ export default function ExploreScreen() {
   const [selectedRadius, setSelectedRadius] = useState<number>(15);
   const [maxPrice, setMaxPrice] = useState<number>(500);
 
-  // Booking State
+// Booking State
+  const [arrivalOffsetHours, setArrivalOffsetHours] = useState<number>(0); // 0 = Now, 1 = +1hr, 2 = +2hr, etc.
   const [bookingHours, setBookingHours] = useState<number>(2);
   const [bookingSubmitting, setBookingSubmitting] = useState(false);
 
+  // Helper to format arrival and departure times
+  const getReservationTimes = () => {
+    const startMs = Date.now() + arrivalOffsetHours * 60 * 60 * 1000 + (arrivalOffsetHours === 0 ? 10 * 60 * 1000 : 0);
+    const start = new Date(startMs);
+    const end = new Date(start.getTime() + bookingHours * 60 * 60 * 1000);
+
+    const formatTime = (d: Date) =>
+      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    return {
+      start,
+      end,
+      startTimeStr: formatTime(start),
+      endTimeStr: formatTime(end),
+    };
+  };
   // 1. Initialize Location & Spots
   useEffect(() => {
     (async () => {
@@ -218,25 +235,23 @@ export default function ExploreScreen() {
     fetchNearbySpots(userLocation.latitude, userLocation.longitude, selectedRadius, maxPrice);
   };
 
-  // 6. Submit Booking
+  // 6. Submit Booking with Selected Arrival Slot
   const handleBookSpot = async () => {
     if (!selectedSpot) return;
 
     setBookingSubmitting(true);
     try {
-      const now = new Date();
-      const checkinTime = new Date(now.getTime() + 10 * 60 * 1000);
-      const checkoutTime = new Date(checkinTime.getTime() + bookingHours * 60 * 60 * 1000);
+      const { start, end, startTimeStr, endTimeStr } = getReservationTimes();
 
       await api.post('/bookings/request', {
         spot_id: selectedSpot._id,
-        scheduled_checkin: checkinTime.toISOString(),
-        scheduled_checkout: checkoutTime.toISOString(),
+        scheduled_checkin: start.toISOString(),
+        scheduled_checkout: end.toISOString(),
       });
 
       Alert.alert(
         'Booking Requested!',
-        `Your reservation for ${selectedSpot.street_address} (${bookingHours} hrs) has been submitted. The host will review and approve it shortly.`,
+        `Your slot at ${selectedSpot.street_address} from ${startTimeStr} to ${endTimeStr} (${bookingHours} hrs) has been submitted for host approval.`,
         [
           {
             text: 'View in My Bookings',
@@ -248,15 +263,16 @@ export default function ExploreScreen() {
           },
           {
             text: 'Stay on Map',
-            onPress: () => {
-              setSelectedSpot(null);
-            },
+            onPress: () => setSelectedSpot(null),
             style: 'cancel',
           },
         ]
       );
     } catch (error: any) {
-      Alert.alert('Booking Failed', error.response?.data?.message || 'Could not place booking request.');
+      Alert.alert(
+        'Slot Unavailable',
+        error.response?.data?.message || 'Could not place booking request for this timeframe.'
+      );
     } finally {
       setBookingSubmitting(false);
     }
@@ -412,10 +428,11 @@ export default function ExploreScreen() {
         )}
       </View>
 
-      {/* 3. Spot Details & Booking Bottom Sheet */}
+      {/* 3. Spot Details & Booking Bottom Sheet with Arrival Slot Picker */}
       {selectedSpot && (
         <View style={styles.bottomSheetContainer}>
           <View style={styles.bottomSheetCard}>
+            {/* Spot Header */}
             <View style={styles.spotHeaderRow}>
               <View style={{ flex: 1, paddingRight: 12 }}>
                 <Text style={styles.spotAddressText} numberOfLines={1}>
@@ -433,7 +450,46 @@ export default function ExploreScreen() {
               </View>
             </View>
 
-            {/* Duration Selector */}
+            {/* 1. Arrival Time Slot Selector */}
+            <View style={{ marginBottom: 10, paddingTop: 8, borderTopWidth: 1, borderColor: '#374151' }}>
+              <Text style={{ color: '#9CA3AF', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginBottom: 6 }}>
+                Arrival Time:
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 6 }}>
+                {[
+                  { label: 'Now', offset: 0 },
+                  { label: 'In 1 hr', offset: 1 },
+                  { label: 'In 2 hrs', offset: 2 },
+                  { label: 'In 4 hrs', offset: 4 },
+                ].map((item) => (
+                  <TouchableOpacity
+                    key={item.offset}
+                    onPress={() => setArrivalOffsetHours(item.offset)}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 7,
+                      borderRadius: 10,
+                      alignItems: 'center',
+                      backgroundColor: arrivalOffsetHours === item.offset ? '#10B981' : '#0B0F19',
+                      borderWidth: 1,
+                      borderColor: arrivalOffsetHours === item.offset ? '#10B981' : '#374151',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: '700',
+                        color: arrivalOffsetHours === item.offset ? '#0B0F19' : '#D1D5DB',
+                      }}
+                    >
+                      {item.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* 2. Duration Selector */}
             <View style={styles.durationRow}>
               <Text style={styles.durationLabel}>Duration:</Text>
               <View style={styles.durationControls}>
@@ -455,12 +511,20 @@ export default function ExploreScreen() {
               </View>
             </View>
 
-            {/* Total Fee Preview */}
+            {/* 3. Live Schedule & Total Fee Preview */}
             <View style={styles.totalPreviewBox}>
-              <Text style={styles.totalLabel}>Estimated Total</Text>
-              <Text style={styles.totalAmountText}>
-                Rs. {selectedSpot.hourly_rate * bookingHours}
-              </Text>
+              <View>
+                <Text style={{ color: '#9CA3AF', fontSize: 10, textTransform: 'uppercase' }}>Time Window</Text>
+                <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '700', marginTop: 2 }}>
+                  {getReservationTimes().startTimeStr} → {getReservationTimes().endTimeStr}
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text style={styles.totalLabel}>Estimated Total</Text>
+                <Text style={styles.totalAmountText}>
+                  Rs. {selectedSpot.hourly_rate * bookingHours}
+                </Text>
+              </View>
             </View>
 
             {/* Action Buttons: Directions & Book */}
