@@ -44,8 +44,8 @@ export default function ExploreScreen() {
   const router = useRouter();
   const mapRef = useRef<MapView | null>(null);
 
-  // Map & Location State (Default: Lahore)
-  const [currentCoords, setCurrentCoords] = useState<{ latitude: number; longitude: number }>({
+  // User's Real Device GPS Location (Never overwritten by search)
+  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number }>({
     latitude: 31.5204,
     longitude: 74.3587,
   });
@@ -88,7 +88,9 @@ export default function ExploreScreen() {
           const lat = loc.coords.latitude;
           const lng = loc.coords.longitude;
 
-          setCurrentCoords({ latitude: lat, longitude: lng });
+          // Save your real device location
+          setUserLocation({ latitude: lat, longitude: lng });
+
           const newReg = {
             latitude: lat,
             longitude: lng,
@@ -103,7 +105,7 @@ export default function ExploreScreen() {
           fetchNearbySpots(31.5204, 74.3587, selectedRadius, maxPrice);
         }
       } catch (err) {
-        console.warn('GPS fallback to central Lahore:', err);
+        console.warn('GPS fallback:', err);
         fetchNearbySpots(31.5204, 74.3587, selectedRadius, maxPrice);
       } finally {
         setLoading(false);
@@ -124,12 +126,12 @@ export default function ExploreScreen() {
     }
   };
 
-  // 3. OSRM Route Calculation (FR-07)
+  // 3. OSRM Route Calculation (FR-07) - Always starts from user's REAL location
   const fetchDrivingRoute = async (spot: ParkingSpot) => {
     setFetchingRoute(true);
     try {
-      const startLng = currentCoords.longitude;
-      const startLat = currentCoords.latitude;
+      const startLng = userLocation.longitude; // <-- REAL GPS
+      const startLat = userLocation.latitude;  // <-- REAL GPS
       const endLng = spot.location.coordinates[0];
       const endLat = spot.location.coordinates[1];
 
@@ -194,7 +196,7 @@ export default function ExploreScreen() {
           longitudeDelta: 0.05,
         };
 
-        setCurrentCoords({ latitude: targetLat, longitude: targetLng });
+        // Pan map to search area WITHOUT overwriting your device GPS!
         setMapRegion(newRegion);
         mapRef.current?.animateToRegion(newRegion, 1000);
         clearRoute();
@@ -213,7 +215,7 @@ export default function ExploreScreen() {
   // 5. Apply Filters
   const handleApplyFilters = () => {
     setShowFilterModal(false);
-    fetchNearbySpots(currentCoords.latitude, currentCoords.longitude, selectedRadius, maxPrice);
+    fetchNearbySpots(userLocation.latitude, userLocation.longitude, selectedRadius, maxPrice);
   };
 
   // 6. Submit Booking
