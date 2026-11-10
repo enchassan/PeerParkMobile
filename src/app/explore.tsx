@@ -8,9 +8,8 @@ import {
   Alert,
   Modal,
   StyleSheet,
-  Platform,
 } from 'react-native';
-import MapView, { Marker, UrlTile, Region } from 'react-native-maps';
+import MapView, { Marker, UrlTile, Polyline, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
@@ -36,11 +35,16 @@ interface ParkingSpot {
   host_id?: Host;
 }
 
+interface RouteMeta {
+  distanceKm: number;
+  durationMins: number;
+}
+
 export default function ExploreScreen() {
   const router = useRouter();
   const mapRef = useRef<MapView | null>(null);
 
-  // Default: Lahore, Pakistan
+  // Map & Location State (Default: Lahore)
   const [currentCoords, setCurrentCoords] = useState<{ latitude: number; longitude: number }>({
     latitude: 31.5204,
     longitude: 74.3587,
@@ -60,10 +64,15 @@ export default function ExploreScreen() {
   const [spots, setSpots] = useState<ParkingSpot[]>([]);
   const [selectedSpot, setSelectedSpot] = useState<ParkingSpot | null>(null);
 
+  // OSRM Routing State (FR-07)
+  const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
+  const [routeMeta, setRouteMeta] = useState<RouteMeta | null>(null);
+  const [fetchingRoute, setFetchingRoute] = useState(false);
+
   // Filters State
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [selectedRadius, setSelectedRadius] = useState<number>(15); // km
-  const [maxPrice, setMaxPrice] = useState<number>(500); // PKR
+  const [selectedRadius, setSelectedRadius] = useState<number>(15);
+  const [maxPrice, setMaxPrice] = useState<number>(500);
 
   // Booking State
   const [bookingHours, setBookingHours] = useState<number>(2);
@@ -102,7 +111,7 @@ export default function ExploreScreen() {
     })();
   }, []);
 
-  // 2. Query Spots from Backend
+  // 2. Query Nearby Spots from Backend
   const fetchNearbySpots = async (lat: number, lng: number, radius: number, priceLimit: number) => {
     try {
       const response = await api.get('/spots/nearby', {
@@ -115,7 +124,51 @@ export default function ExploreScreen() {
     }
   };
 
-  // 3. Search via OpenStreetMap Nominatim
+  // 3. OSRM Route Calculation (FR-07)
+  const fetchDrivingRoute = async (spot: ParkingSpot) => {
+    setFetchingRoute(true);
+    try {
+      const startLng = currentCoords.longitude;
+      const startLat = currentCoords.latitude;
+      const endLng = spot.location.coordinates[0];
+      const endLat = spot.location.coordinates[1];
+
+      const osrmUrl = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+
+      const response = await axios.get(osrmUrl, { timeout: 6000 });
+      const route = response.data?.routes?.[0];
+
+      if (route && route.geometry?.coordinates) {
+        const points = route.geometry.coordinates.map((pt: [number, number]) => ({
+          latitude: pt[1],
+          longitude: pt[0],
+        }));
+
+        setRouteCoords(points);
+        setRouteMeta({
+          distanceKm: Math.round((route.distance / 1000) * 10) / 10,
+          durationMins: Math.max(1, Math.round(route.duration / 60)),
+        });
+
+        // Fit map view to show entire polyline
+        mapRef.current?.fitToCoordinates(points, {
+          edgePadding: { top: 120, right: 60, bottom: 280, left: 60 },
+          animated: true,
+        });
+      }
+    } catch (err) {
+      Alert.alert('Routing Notice', 'Could not fetch live road directions from OSRM.');
+    } finally {
+      setFetchingRoute(false);
+    }
+  };
+
+  const clearRoute = () => {
+    setRouteCoords([]);
+    setRouteMeta(null);
+  };
+
+  // 4. Address Search via Nominatim
   const handleAddressSearch = async () => {
     if (!searchQuery.trim()) return;
 
@@ -144,6 +197,7 @@ export default function ExploreScreen() {
         setCurrentCoords({ latitude: targetLat, longitude: targetLng });
         setMapRegion(newRegion);
         mapRef.current?.animateToRegion(newRegion, 1000);
+        clearRoute();
 
         fetchNearbySpots(targetLat, targetLng, selectedRadius, maxPrice);
       } else {
@@ -156,13 +210,13 @@ export default function ExploreScreen() {
     }
   };
 
-  // 4. Apply Filters
+  // 5. Apply Filters
   const handleApplyFilters = () => {
     setShowFilterModal(false);
     fetchNearbySpots(currentCoords.latitude, currentCoords.longitude, selectedRadius, maxPrice);
   };
 
-  // 5. Submit Booking Request
+  // 6. Submit Booking
   const handleBookSpot = async () => {
     if (!selectedSpot) return;
 
@@ -186,12 +240,15 @@ export default function ExploreScreen() {
             text: 'View in My Bookings',
             onPress: () => {
               setSelectedSpot(null);
+              clearRoute();
               router.push('/bookings' as any);
             },
           },
           {
             text: 'Stay on Map',
-            onPress: () => setSelectedSpot(null),
+            onPress: () => {
+              setSelectedSpot(null);
+            },
             style: 'cancel',
           },
         ]
@@ -203,7 +260,7 @@ export default function ExploreScreen() {
     }
   };
 
-  // 6. Sign Out
+  // 7. Sign Out
   const handleLogout = async () => {
     await SecureStore.deleteItemAsync('userToken');
     await SecureStore.deleteItemAsync('userRole');
@@ -222,7 +279,7 @@ export default function ExploreScreen() {
 
   return (
     <View style={styles.container}>
-      {/* 1. OpenStreetMap Tile-Driven MapView */}
+      {/* 1. OpenStreetMap Tile MapView */}
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
@@ -231,7 +288,6 @@ export default function ExploreScreen() {
         showsMyLocationButton
         onPress={() => setSelectedSpot(null)}
       >
-        {/* OpenStreetMap Tile Layer (OSM standard tiles) */}
         <UrlTile
           urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
           maximumZ={19}
@@ -239,7 +295,17 @@ export default function ExploreScreen() {
           zIndex={1}
         />
 
-        {/* 2. Interactive Price Badge Markers */}
+        {/* OSRM Route Polyline (FR-07) */}
+        {routeCoords.length > 0 && (
+          <Polyline
+            coordinates={routeCoords}
+            strokeColor="#10B981"
+            strokeWidth={5}
+            zIndex={10}
+          />
+        )}
+
+        {/* Parking Spot Pins */}
         {spots.map((spot) => {
           const [lng, lat] = spot.location.coordinates;
           const isSelected = selectedSpot?._id === spot._id;
@@ -252,15 +318,7 @@ export default function ExploreScreen() {
               onPress={(e) => {
                 e.stopPropagation();
                 setSelectedSpot(spot);
-                mapRef.current?.animateToRegion(
-                  {
-                    latitude: lat - 0.005, // Offset slightly so bottom sheet doesn't cover marker
-                    longitude: lng,
-                    latitudeDelta: 0.02,
-                    longitudeDelta: 0.02,
-                  },
-                  500
-                );
+                fetchDrivingRoute(spot);
               }}
             >
               <View
@@ -283,9 +341,8 @@ export default function ExploreScreen() {
         })}
       </MapView>
 
-      {/* 3. Top Navigation & Search Bar */}
+      {/* 2. Top Header & Search Bar */}
       <View style={styles.topBarContainer}>
-        {/* Header Bar */}
         <View style={styles.headerRow}>
           <View style={styles.logoRow}>
             <View style={styles.logoDot} />
@@ -334,15 +391,26 @@ export default function ExploreScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Available Spots Count Tag */}
-        <View style={styles.spotsCountTag}>
-          <Text style={styles.spotsCountText}>
-            {spots.length} {spots.length === 1 ? 'spot' : 'spots'} available nearby
-          </Text>
-        </View>
+        {/* Route Info Badge (When OSRM Route is active) */}
+        {routeMeta ? (
+          <View style={styles.routePill}>
+            <Text style={styles.routePillText}>
+              🚗 {routeMeta.distanceKm} km • ~{routeMeta.durationMins} mins via OSRM
+            </Text>
+            <TouchableOpacity onPress={clearRoute} style={styles.clearRouteBtn}>
+              <Text style={styles.clearRouteText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.spotsCountTag}>
+            <Text style={styles.spotsCountText}>
+              {spots.length} {spots.length === 1 ? 'spot' : 'spots'} available nearby
+            </Text>
+          </View>
+        )}
       </View>
 
-      {/* 4. Spot Details & Booking Bottom Sheet (Figure 41) */}
+      {/* 3. Spot Details & Booking Bottom Sheet */}
       {selectedSpot && (
         <View style={styles.bottomSheetContainer}>
           <View style={styles.bottomSheetCard}>
@@ -353,6 +421,7 @@ export default function ExploreScreen() {
                 </Text>
                 <Text style={styles.spotHostText}>
                   Host: {selectedSpot.host_id?.full_name || 'Verified Resident'}
+                  {routeMeta ? ` • ${routeMeta.distanceKm} km away` : ''}
                 </Text>
               </View>
 
@@ -392,23 +461,37 @@ export default function ExploreScreen() {
               </Text>
             </View>
 
-            {/* Book CTA */}
-            <TouchableOpacity
-              onPress={handleBookSpot}
-              disabled={bookingSubmitting}
-              style={styles.bookButton}
-            >
-              {bookingSubmitting ? (
-                <ActivityIndicator color="#0B0F19" />
-              ) : (
-                <Text style={styles.bookButtonText}>Confirm Booking Request</Text>
-              )}
-            </TouchableOpacity>
+            {/* Action Buttons: Directions & Book */}
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => fetchDrivingRoute(selectedSpot)}
+                disabled={fetchingRoute}
+                style={styles.directionsBtn}
+              >
+                {fetchingRoute ? (
+                  <ActivityIndicator color="#10B981" size="small" />
+                ) : (
+                  <Text style={styles.directionsBtnText}>🧭 Route</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={handleBookSpot}
+                disabled={bookingSubmitting}
+                style={styles.bookButton}
+              >
+                {bookingSubmitting ? (
+                  <ActivityIndicator color="#0B0F19" />
+                ) : (
+                  <Text style={styles.bookButtonText}>Confirm Booking</Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       )}
 
-      {/* 5. Filters Modal */}
+      {/* 4. Filters Modal */}
       <Modal visible={showFilterModal} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -616,6 +699,37 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  routePill: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: '#1A2235',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#10B981',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  routePillText: {
+    color: '#10B981',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  clearRouteBtn: {
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    height: 18,
+    width: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearRouteText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   markerBadge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
@@ -757,11 +871,28 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '800',
   },
+  directionsBtn: {
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  directionsBtnText: {
+    color: '#10B981',
+    fontSize: 14,
+    fontWeight: '800',
+  },
   bookButton: {
+    flex: 1,
     backgroundColor: '#10B981',
     paddingVertical: 14,
     borderRadius: 14,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   bookButtonText: {
     color: '#0B0F19',
