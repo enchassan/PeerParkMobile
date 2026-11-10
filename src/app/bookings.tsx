@@ -63,6 +63,9 @@ export default function BookingsScreen() {
   const [rating, setRating] = useState<number>(5);
   const [processingPayment, setProcessingPayment] = useState<boolean>(false);
 
+  // Invoice Receipt Modal State (FR-16)
+  const [selectedInvoice, setSelectedInvoice] = useState<Booking | null>(null);
+
   // 1. Fetch Bookings for Current Driver
   const loadBookings = useCallback(async () => {
     try {
@@ -417,7 +420,7 @@ export default function BookingsScreen() {
             </View>
           )}
 
-          {/* TAB 3: COMPLETED BOOKINGS */}
+          {/* TAB 3: COMPLETED BOOKINGS - Tap to view invoice */}
           {tab === 'completed' && (
             <View className="space-y-4">
               {completedList.length === 0 ? (
@@ -426,9 +429,11 @@ export default function BookingsScreen() {
                 </View>
               ) : (
                 completedList.map((b) => (
-                  <View
+                  <TouchableOpacity
                     key={b._id}
-                    className="bg-[#1A2235] p-5 rounded-2xl border border-gray-800"
+                    onPress={() => setSelectedInvoice(b)}
+                    activeOpacity={0.8}
+                    className="bg-[#1A2235] p-5 rounded-2xl border border-gray-800 active:border-[#10B981]/50"
                   >
                     <View className="flex-row items-start justify-between">
                       <View className="flex-1 pr-3">
@@ -437,6 +442,9 @@ export default function BookingsScreen() {
                         </Text>
                         <Text className="text-gray-400 text-xs mt-1">
                           {new Date(b.createdAt).toLocaleDateString()} • {b.payment_gateway || 'EasyPaisa'}
+                        </Text>
+                        <Text className="text-[#10B981] text-[11px] font-semibold mt-2">
+                          🧾 View Digital Invoice
                         </Text>
                       </View>
                       <View className="items-end">
@@ -450,7 +458,7 @@ export default function BookingsScreen() {
                         </View>
                       </View>
                     </View>
-                  </View>
+                  </TouchableOpacity>
                 ))
               )}
             </View>
@@ -559,6 +567,113 @@ export default function BookingsScreen() {
                 </Text>
               )}
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      
+      {/* 7. Official Digital Invoice Modal (FR-16) */}
+      <Modal visible={!!selectedInvoice} animationType="slide" transparent>
+        <View className="flex-1 justify-end bg-black/80">
+          <View className="bg-[#1A2235] p-6 rounded-t-3xl border-t border-gray-800 max-h-[90%]">
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Receipt Header */}
+              <View className="items-center pb-4 border-b border-gray-800 mb-4">
+                <View className="flex-row items-center gap-2 mb-1">
+                  <View className="h-2.5 w-2.5 rounded-full bg-[#10B981]" />
+                  <Text className="text-xs uppercase tracking-widest text-[#10B981] font-extrabold">
+                    PeerPark Digital Invoice
+                  </Text>
+                </View>
+                <Text className="text-white text-xl font-bold">Official Session Receipt</Text>
+                <Text className="text-gray-400 text-xs mt-1">
+                  Invoice #{selectedInvoice?._id.slice(-6).toUpperCase()}
+                </Text>
+
+                {/* Settled Badge */}
+                <View className="mt-2 bg-[#10B981]/20 px-3 py-1 rounded-full border border-[#10B981]/40 flex-row items-center gap-1.5">
+                  <Text className="text-[#10B981] text-[11px] font-extrabold">
+                    ✓ PAID & ESCROW DISBURSED
+                  </Text>
+                </View>
+              </View>
+
+              {/* Space & Host Metadata */}
+              <View className="bg-[#0B0F19] p-4 rounded-2xl border border-gray-800 mb-4 space-y-2">
+                <View className="flex-row justify-between">
+                  <Text className="text-gray-400 text-xs">Parking Space</Text>
+                  <Text className="text-white text-xs font-bold flex-1 text-right ml-2" numberOfLines={1}>
+                    {selectedInvoice?.spot_id?.street_address}
+                  </Text>
+                </View>
+
+                <View className="flex-row justify-between">
+                  <Text className="text-gray-400 text-xs">Host</Text>
+                  <Text className="text-gray-200 text-xs font-semibold">
+                    {selectedInvoice?.host_id?.full_name || 'Verified Resident'}
+                  </Text>
+                </View>
+
+                <View className="flex-row justify-between">
+                  <Text className="text-gray-400 text-xs">Date</Text>
+                  <Text className="text-gray-200 text-xs font-semibold">
+                    {selectedInvoice ? new Date(selectedInvoice.createdAt).toLocaleDateString() : ''}
+                  </Text>
+                </View>
+
+                <View className="flex-row justify-between">
+                  <Text className="text-gray-400 text-xs">Payment Method</Text>
+                  <Text className="text-[#10B981] text-xs font-bold">
+                    {selectedInvoice?.payment_gateway || 'EasyPaisa'} M-Wallet
+                  </Text>
+                </View>
+              </View>
+
+              {/* Itemized Fee Breakdown Table */}
+              <View className="bg-[#0B0F19] p-4 rounded-2xl border border-gray-800 mb-6">
+                <Text className="text-gray-400 text-xs font-semibold uppercase mb-3">
+                  Itemized Fee Breakdown
+                </Text>
+
+                <View className="flex-row justify-between mb-2">
+                  <Text className="text-gray-400 text-xs">Hourly Rate</Text>
+                  <Text className="text-gray-200 text-xs font-semibold">
+                    Rs. {selectedInvoice?.spot_id?.hourly_rate || 150}/hr
+                  </Text>
+                </View>
+
+                {/* Overstay Line Item if applicable */}
+                {(selectedInvoice?.overstay_fee ?? 0) > 0 ? (
+                  <View className="flex-row justify-between mb-2">
+                    <Text className="text-amber-400 text-xs">
+                      Overstay Penalty ({selectedInvoice?.overstay_hours} hr @ Rs. 100/hr)
+                    </Text>
+                    <Text className="text-amber-400 text-xs font-bold">
+                      + Rs. {selectedInvoice?.overstay_fee}
+                    </Text>
+                  </View>
+                ) : (
+                  <View className="flex-row justify-between mb-2">
+                    <Text className="text-gray-400 text-xs">Overstay Surcharge</Text>
+                    <Text className="text-emerald-400 text-xs font-semibold">Rs. 0 (On Time)</Text>
+                  </View>
+                )}
+
+                <View className="flex-row justify-between pt-3 border-t border-gray-800 items-baseline">
+                  <Text className="text-white font-bold text-sm">Total Paid</Text>
+                  <Text className="text-[#10B981] font-extrabold text-2xl">
+                    Rs. {selectedInvoice?.total_fee}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Close Button */}
+              <TouchableOpacity
+                onPress={() => setSelectedInvoice(null)}
+                className="w-full bg-[#10B981] py-4 rounded-xl items-center active:opacity-90 mb-4"
+              >
+                <Text className="text-[#0B0F19] font-bold text-base">Close Receipt</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
         </View>
       </Modal>
