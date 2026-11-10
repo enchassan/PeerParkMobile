@@ -35,6 +35,8 @@ interface Booking {
   actual_checkin?: string | null;
   actual_checkout?: string | null;
   total_fee: number;
+  overstay_hours?: number;
+  overstay_fee?: number;
   rating?: number;
   payment_gateway?: string;
   booking_status: 'Pending' | 'Confirmed' | 'Active_Parking' | 'Completed' | 'Declined' | 'Expired';
@@ -135,20 +137,49 @@ export default function BookingsScreen() {
 
       setActiveSession(updated);
       setBookings((prev) =>
-        prev.map((b) => (b._id === bookingId ? { ...b, booking_status: 'Active_Parking', actual_checkin: new Date().toISOString() } : b))
+        prev.map((b) =>
+          b._id === bookingId
+            ? { ...b, booking_status: 'Active_Parking', actual_checkin: new Date().toISOString() }
+            : b
+        )
       );
     } catch (error: any) {
-      Alert.alert('Check-In Failed', error.response?.data?.message || 'Could not check in.');
+      const msg = error.response?.data?.message || 'Could not check in.';
+      if (Platform.OS === 'web') {
+        window.alert(msg);
+      } else {
+        Alert.alert('Check-In Notice', msg);
+      }
     }
   };
 
-  // 4. Open Checkout Modal
+  // 4. Open Checkout Modal with Real-Time Overstay Calculation
   const handleCheckOut = (booking: Booking) => {
-    setCheckoutBooking(booking);
+    const scheduledEnd = new Date(booking.scheduled_checkout).getTime();
+    const now = Date.now();
+    const GRACE_PERIOD_MS = 5 * 60 * 1000; // 5 min courtesy grace period
+    const PENALTY_RATE = 100; // Rs. 100/hr
+
+    let overstayHours = 0;
+    let overstayFee = 0;
+
+    if (now > scheduledEnd + GRACE_PERIOD_MS) {
+      overstayHours = Math.ceil((now - scheduledEnd) / (1000 * 60 * 60));
+      overstayFee = overstayHours * PENALTY_RATE;
+    }
+
+    const calculatedBooking = {
+      ...booking,
+      overstay_hours: overstayHours,
+      overstay_fee: overstayFee,
+      total_fee: (booking.total_fee || 0) + overstayFee,
+    };
+
+    setCheckoutBooking(calculatedBooking);
     setShowCheckoutModal(true);
   };
 
-  // 5. Final Payment & Rating Settlement (Web + Mobile Compatible)
+  // 5. Final Payment & Rating Settlement
   const handleConfirmPayment = async () => {
     if (!checkoutBooking) return;
 
@@ -169,9 +200,7 @@ export default function BookingsScreen() {
       // 2. Refresh bookings list
       await loadBookings();
 
-      // 3. Show notification
       const successMessage = `Payment Complete!\nRs. ${fee} authorized via ${selectedGateway}. Rating of ${rating} stars saved!`;
-      
       if (Platform.OS === 'web') {
         window.alert(successMessage);
       } else {
@@ -388,7 +417,7 @@ export default function BookingsScreen() {
             </View>
           )}
 
-          {/* TAB 3: COMPLETED BOOKINGS (With real ratings & payment gateway) */}
+          {/* TAB 3: COMPLETED BOOKINGS */}
           {tab === 'completed' && (
             <View className="space-y-4">
               {completedList.length === 0 ? (
@@ -429,7 +458,7 @@ export default function BookingsScreen() {
         </ScrollView>
       </View>
 
-      {/* 6. Checkout & Invoice Settlement Modal */}
+      {/* 6. Checkout & Invoice Settlement Modal with Overstay Penalty */}
       <Modal visible={showCheckoutModal} animationType="slide" transparent>
         <View className="flex-1 justify-end bg-black/75">
           <View className="bg-[#1A2235] p-6 rounded-t-3xl border-t border-gray-800">
@@ -443,7 +472,7 @@ export default function BookingsScreen() {
               </Text>
             </View>
 
-            {/* Invoice Breakdown */}
+            {/* Invoice Breakdown Card with Dynamic Overstay Penalty */}
             <View className="bg-[#0B0F19] p-4 rounded-2xl border border-gray-800 mb-5">
               <Text className="text-gray-400 text-xs font-semibold uppercase mb-3">
                 Invoice Summary
@@ -455,6 +484,18 @@ export default function BookingsScreen() {
                   Rs. {checkoutBooking?.spot_id?.hourly_rate || 150}/hr
                 </Text>
               </View>
+
+              {/* Dynamic Overstay Line */}
+              {(checkoutBooking?.overstay_fee ?? 0) > 0 && (
+                <View className="flex-row justify-between mb-2 bg-amber-500/10 p-2 rounded-lg border border-amber-500/30">
+                  <Text className="text-amber-400 text-xs font-semibold">
+                    ⚠️ Overstay ({checkoutBooking?.overstay_hours} hr @ Rs. 100/hr)
+                  </Text>
+                  <Text className="text-amber-400 text-xs font-bold">
+                    + Rs. {checkoutBooking?.overstay_fee}
+                  </Text>
+                </View>
+              )}
 
               <View className="flex-row justify-between pt-3 border-t border-gray-800 items-baseline">
                 <Text className="text-white font-bold text-sm">Total Cost</Text>
