@@ -26,6 +26,7 @@ interface Host {
 interface ParkingSpot {
   _id: string;
   street_address: string;
+  special_instructions?: string; 
   hourly_rate: number;
   spot_status: string;
   is_active: boolean;
@@ -79,7 +80,7 @@ export default function ExploreScreen() {
 
   // Filters State
   const [showFilterModal, setShowFilterModal] = useState(false);
-  const [selectedRadius, setSelectedRadius] = useState<number>(15);
+  const [selectedRadius, setSelectedRadius] = useState<number>(30);
   const [maxPrice, setMaxPrice] = useState<number>(500);
 
   // Booking State
@@ -465,6 +466,11 @@ export default function ExploreScreen() {
                   Host: {selectedSpot.host_id?.full_name || 'Verified Resident'}
                   {routeMeta ? ` • ${routeMeta.distanceKm} km away` : ''}
                 </Text>
+                {selectedSpot.special_instructions ? (
+                  <Text style={{ color: '#D1D5DB', fontSize: 12, marginTop: 4 }} numberOfLines={2}>
+                    📝 {selectedSpot.special_instructions}
+                  </Text>
+                ) : null}
               </View>
 
               <View style={styles.spotRateBox}>
@@ -623,7 +629,7 @@ export default function ExploreScreen() {
 
             <Text style={styles.filterSectionTitle}>Maximum Distance Radius</Text>
             <View style={styles.filterRow}>
-              {[2, 5, 10, 20].map((radius) => (
+              {[5, 10, 20, 30].map((radius) => (
                 <TouchableOpacity
                   key={radius}
                   onPress={() => setSelectedRadius(radius)}
