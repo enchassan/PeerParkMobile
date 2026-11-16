@@ -5,7 +5,7 @@ import { storage } from './storage';
 // Use localhost on Web, and your Wi-Fi IP on physical iPhone
 const API_URL = Platform.OS === 'web' 
   ? 'http://localhost:5000/api' 
-  : 'http://192.168.1.2:5000/api';
+  : 'http://192.168.1.13:5000/api';
 
 const api = axios.create({
   baseURL: API_URL,

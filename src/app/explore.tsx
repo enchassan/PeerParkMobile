@@ -150,7 +150,7 @@ export default function ExploreScreen() {
       const fetched: ParkingSpot[] = response.data?.spots || [];
       setSpots(fetched);
     } catch (error: any) {
-      console.error('Failed to fetch spots:', error.message);
+      console.warn('Failed to fetch spots:', error.message);
     }
   };
 
