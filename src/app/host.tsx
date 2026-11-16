@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import MapView, { Marker, UrlTile } from 'react-native-maps';
 import {
   View,
   Text,
@@ -14,14 +15,15 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { storage } from '../services/storage';
 import * as Location from 'expo-location';
 import axios from 'axios';
+import { storage } from '../services/storage';
 import api from '../services/api';
 
 interface ParkingSpot {
   _id: string;
   street_address: string;
+  special_instructions?: string;
   hourly_rate: number;
   is_active: boolean;
   spot_status: string;
@@ -53,6 +55,7 @@ export default function HostScreen() {
   const router = useRouter();
 
   // Host Data State
+  const miniMapRef = useRef<MapView | null>(null);
   const [hostUser, setHostUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -63,6 +66,7 @@ export default function HostScreen() {
   // Add Spot Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [newAddress, setNewAddress] = useState('');
+  const [specialInstructions, setSpecialInstructions] = useState('');
   const [newRate, setNewRate] = useState('150');
   const [geocoding, setGeocoding] = useState(false);
   const [creatingSpot, setCreatingSpot] = useState(false);
@@ -77,6 +81,7 @@ export default function HostScreen() {
       const storedUserData = await storage.getItem('userData');
       const user = storedUserData ? JSON.parse(storedUserData) : null;
       setHostUser(user);
+      const userId = user?.id || user?._id;
 
       // Fetch host's own spots
       let spotsRes;
@@ -92,23 +97,20 @@ export default function HostScreen() {
       const bookingsRes = await api.get('/bookings');
       const allBookings: BookingRequest[] = bookingsRes.data?.bookings || [];
 
-      // Filter bookings relevant to this host
       const myBookings = allBookings.filter((b: any) => {
         const hostId = b.host_id?._id || b.host_id;
-        return user?.id ? hostId === user.id : true;
+        return userId ? hostId === userId : true;
       });
 
-      // Filter pending requests
       const pending = myBookings.filter((b) => b.booking_status === 'Pending');
       setPendingBookings(pending);
 
-      // Compute total earnings from completed sessions
       const earnings = myBookings
         .filter((b) => b.booking_status === 'Completed')
         .reduce((sum, b) => sum + (Number(b.total_fee) || 0), 0);
       setTotalEarnings(earnings);
     } catch (error: any) {
-      console.error('Failed to load host dashboard:', error.message);
+      console.warn('Failed to load host dashboard:', error.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -124,12 +126,30 @@ export default function HostScreen() {
     loadHostData();
   };
 
+  // Center mini-map on host's current GPS when opening Add New Space
+  const openAddSpotModal = async () => {
+    setShowAddModal(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({});
+        const lat = loc.coords.latitude;
+        const lng = loc.coords.longitude;
+        setCoords({ lat, lng });
+        miniMapRef.current?.animateToRegion(
+          { latitude: lat, longitude: lng, latitudeDelta: 0.015, longitudeDelta: 0.015 },
+          500
+        );
+      }
+    } catch (err) {
+      // Keep default Lahore coordinates if GPS unavailable
+    }
+  };
+
   // 2. Toggle Spot Visibility
   const handleToggleSpot = async (spotId: string) => {
     try {
-      const response = await api.patch(`/spots/${spotId}/toggle`);
-      const updated = response.data?.spot;
-
+      await api.patch(`/spots/${spotId}/toggle`);
       setSpots((prev) =>
         prev.map((s) => (s._id === spotId ? { ...s, is_active: !s.is_active } : s))
       );
@@ -150,14 +170,13 @@ export default function HostScreen() {
           : 'The time slot has been released back to your calendar.'
       );
 
-      // Remove from pending list
       setPendingBookings((prev) => prev.filter((b) => b._id !== bookingId));
     } catch (error: any) {
       Alert.alert('Decision Failed', error.response?.data?.message || 'Could not update booking.');
     }
   };
 
-  // 4. Auto-Geocode Address using Nominatim
+  // 4. Jump Pin to Address using Nominatim
   const handleAutoGeocode = async () => {
     if (!newAddress.trim()) {
       Alert.alert('Address Required', 'Please enter a street address to locate.');
@@ -179,20 +198,18 @@ export default function HostScreen() {
         const lat = parseFloat(response.data[0].lat);
         const lon = parseFloat(response.data[0].lon);
         setCoords({ lat, lng: lon });
-        Alert.alert('Location Found', `Mapped coordinates:\nLat: ${lat.toFixed(4)}, Lng: ${lon.toFixed(4)}`);
+        miniMapRef.current?.animateToRegion(
+          { latitude: lat, longitude: lon, latitudeDelta: 0.015, longitudeDelta: 0.015 },
+          600
+        );
       } else {
-        // Fallback to current device GPS
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({});
-          setCoords({ lat: loc.coords.latitude, lng: loc.coords.longitude });
-          Alert.alert('Address Geocode Fallback', 'Used current GPS location for this spot.');
-        } else {
-          Alert.alert('Not Found', 'Could not resolve address. Lahore default coordinates applied.');
-        }
+        Alert.alert(
+          'Pin Not Found Automatically',
+          'Tap directly on the map or drag the red pin to mark your exact spot.'
+        );
       }
     } catch (err) {
-      Alert.alert('Notice', 'Using default regional coordinates.');
+      Alert.alert('Notice', 'Could not reach geocoder. Drag the pin on the map to your exact spot.');
     } finally {
       setGeocoding(false);
     }
@@ -209,6 +226,7 @@ export default function HostScreen() {
     try {
       const payload = {
         street_address: newAddress.trim(),
+        special_instructions: specialInstructions.trim(),
         hourly_rate: Number(newRate),
         is_active: true,
         spot_status: 'Approved',
@@ -225,8 +243,9 @@ export default function HostScreen() {
         setSpots((prev) => [created, ...prev]);
         setShowAddModal(false);
         setNewAddress('');
+        setSpecialInstructions('');
         setNewRate('150');
-        Alert.alert('Spot Created!', 'Your parking space is now active on the driver map.');
+        Alert.alert('Spot Created!', 'Your parking space is now live on the driver map.');
       }
     } catch (error: any) {
       Alert.alert('Creation Failed', error.response?.data?.message || 'Could not create spot.');
@@ -277,7 +296,7 @@ export default function HostScreen() {
         </View>
 
         {/* 1. Net Earnings Card */}
-        <View className="bg-gradient-to-r bg-[#1A2235] p-6 rounded-3xl border border-gray-800 mb-6 shadow-xl">
+        <View className="bg-[#1A2235] p-6 rounded-3xl border border-gray-800 mb-6 shadow-xl">
           <Text className="text-gray-400 text-xs font-semibold uppercase tracking-wider">
             Total Net Earnings
           </Text>
@@ -302,7 +321,7 @@ export default function HostScreen() {
               Active Listings ({spots.length})
             </Text>
             <TouchableOpacity
-              onPress={() => setShowAddModal(true)}
+              onPress={openAddSpotModal}
               className="bg-[#10B981] px-3 py-1.5 rounded-xl active:opacity-90"
             >
               <Text className="text-[#0B0F19] text-xs font-bold">+ Add New</Text>
@@ -313,7 +332,7 @@ export default function HostScreen() {
             <View className="bg-[#1A2235]/60 p-6 rounded-2xl border border-gray-800 items-center">
               <Text className="text-gray-400 text-sm">No parking spots listed yet.</Text>
               <TouchableOpacity
-                onPress={() => setShowAddModal(true)}
+                onPress={openAddSpotModal}
                 className="mt-3 bg-[#10B981]/20 px-4 py-2 rounded-xl border border-[#10B981]/40"
               >
                 <Text className="text-[#10B981] text-xs font-bold">List Your Driveway</Text>
@@ -330,6 +349,11 @@ export default function HostScreen() {
                     <Text className="text-white font-bold text-sm" numberOfLines={1}>
                       {spot.street_address}
                     </Text>
+                    {spot.special_instructions ? (
+                      <Text className="text-gray-400 text-[11px] mt-0.5" numberOfLines={1}>
+                        {spot.special_instructions}
+                      </Text>
+                    ) : null}
                     <View className="flex-row items-center gap-2 mt-1">
                       <Text className="text-[#10B981] text-xs font-bold">
                         Rs. {spot.hourly_rate}/hr
@@ -422,13 +446,13 @@ export default function HostScreen() {
         </View>
       </ScrollView>
 
-      {/* 4. "Add New Space" Modal */}
+      {/* 4. "Add New Space" Modal with Interactive Map Pin-Drop */}
       <Modal visible={showAddModal} animationType="slide" transparent>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           className="flex-1 justify-end bg-black/70"
         >
-          <View className="bg-[#1A2235] p-6 rounded-t-3xl border-t border-gray-800 max-h-[85%]">
+          <View className="bg-[#1A2235] p-6 rounded-t-3xl border-t border-gray-800 max-h-[90%]">
             <View className="flex-row justify-between items-center mb-4">
               <Text className="text-white text-xl font-bold">List a Parking Space</Text>
               <TouchableOpacity onPress={() => setShowAddModal(false)}>
@@ -436,15 +460,60 @@ export default function HostScreen() {
               </TouchableOpacity>
             </View>
 
-            <ScrollView keyboardShouldPersistTaps="handled">
+            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              {/* Interactive Mini-Map Pin Drop */}
+              <Text className="text-gray-300 text-xs font-semibold mb-1.5">
+                Tap Map or Drag Pin to Exact Driveway
+              </Text>
+              <View className="rounded-2xl overflow-hidden border border-gray-700 mb-3" style={{ height: 200 }}>
+                <MapView
+                  ref={miniMapRef}
+                  style={{ width: '100%', height: '100%' }}
+                  initialRegion={{
+                    latitude: coords.lat,
+                    longitude: coords.lng,
+                    latitudeDelta: 0.02,
+                    longitudeDelta: 0.02,
+                  }}
+                  onPress={(e) => {
+                    const { latitude, longitude } = e.nativeEvent.coordinate;
+                    setCoords({ lat: latitude, lng: longitude });
+                  }}
+                >
+                  <UrlTile
+                    urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    maximumZ={19}
+                    flipY={false}
+                  />
+                  <Marker
+                    draggable
+                    coordinate={{ latitude: coords.lat, longitude: coords.lng }}
+                    onDragEnd={(e) => {
+                      const { latitude, longitude } = e.nativeEvent.coordinate;
+                      setCoords({ lat: latitude, lng: longitude });
+                    }}
+                  />
+                </MapView>
+              </View>
+
+              {/* Coordinates Preview */}
+              <View className="mb-4 bg-[#0B0F19] p-2.5 rounded-xl border border-gray-800 flex-row justify-between">
+                <Text className="text-[#10B981] text-xs font-semibold">
+                  Lat: {coords.lat.toFixed(5)}
+                </Text>
+                <Text className="text-[#10B981] text-xs font-semibold">
+                  Lng: {coords.lng.toFixed(5)}
+                </Text>
+              </View>
+
               {/* Address Input */}
               <View className="mb-4">
                 <Text className="text-gray-300 text-xs font-semibold mb-1">
-                  Physical Street Address
+                  Street Address / Landmark
                 </Text>
                 <TextInput
                   className="bg-[#0B0F19] text-white px-4 py-3 rounded-xl border border-gray-800"
-                  placeholder="e.g. 14B Sunset Blvd, DHA Phase 5"
+                  placeholder="e.g. CC Block Commercial, Near McDonald's, Bahria Town"
                   placeholderTextColor="#6B7280"
                   value={newAddress}
                   onChangeText={setNewAddress}
@@ -459,16 +528,26 @@ export default function HostScreen() {
                     <ActivityIndicator size="small" color="#10B981" />
                   ) : (
                     <Text className="text-[#10B981] text-xs font-bold">
-                      📍 Auto-Detect Coordinates (Nominatim)
+                      📍 Jump Pin to Address (Nominatim)
                     </Text>
                   )}
                 </TouchableOpacity>
               </View>
 
-              {/* Coordinates Preview */}
-              <View className="mb-4 bg-[#0B0F19] p-3 rounded-xl border border-gray-800 flex-row justify-between">
-                <Text className="text-gray-400 text-xs">Latitude: {coords.lat.toFixed(4)}</Text>
-                <Text className="text-gray-400 text-xs">Longitude: {coords.lng.toFixed(4)}</Text>
+              {/* Special Instructions / Guide */}
+              <View className="mb-4">
+                <Text className="text-gray-300 text-xs font-semibold mb-1">
+                  Directions & Access Guide (Optional)
+                </Text>
+                <TextInput
+                  className="bg-[#0B0F19] text-white px-4 py-3 rounded-xl border border-gray-800"
+                  placeholder="e.g. Opposite McDonald's, park behind the white gate..."
+                  placeholderTextColor="#6B7280"
+                  value={specialInstructions}
+                  onChangeText={setSpecialInstructions}
+                  multiline
+                  numberOfLines={2}
+                />
               </View>
 
               {/* Hourly Rate Input */}
