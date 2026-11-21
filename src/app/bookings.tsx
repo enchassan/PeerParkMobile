@@ -9,6 +9,7 @@ import {
   ScrollView,
   RefreshControl,
   Platform,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { storage } from '../services/storage';
@@ -22,7 +23,11 @@ interface Booking {
   spot_id?: {
     _id: string;
     street_address: string;
+    special_instructions?: string;
     hourly_rate: number;
+    location?: {
+      coordinates: [number, number];
+    };
   };
   host_id?: {
     _id: string;
@@ -93,7 +98,7 @@ export default function BookingsScreen() {
         setActiveSession(null);
       }
     } catch (error: any) {
-      console.error('Failed to load bookings:', error.message);
+      console.warn('Failed to load bookings:', error.message);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -124,6 +129,20 @@ export default function BookingsScreen() {
     return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs
       .toString()
       .padStart(2, '0')}`;
+  };
+
+  const handleGetDirections = (booking: Booking) => {
+    const coords = booking.spot_id?.location?.coordinates;
+    if (!coords || coords.length !== 2) {
+      Alert.alert('No Coordinates', 'Coordinates are not available for this spot.');
+      return;
+    }
+    const [lng, lat] = coords;
+    const url =
+      Platform.OS === 'ios'
+        ? `http://maps.apple.com/?daddr=${lat},${lng}`
+        : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+    Linking.openURL(url);
   };
 
   const onRefresh = () => {
@@ -193,14 +212,12 @@ export default function BookingsScreen() {
         payment_gateway: selectedGateway,
       });
 
-      // 1. Immediately close modal and switch tab
       setShowCheckoutModal(false);
       const fee = checkoutBooking.total_fee;
       setCheckoutBooking(null);
       setActiveSession(null);
       setTab('completed');
 
-      // 2. Refresh bookings list
       await loadBookings();
 
       const successMessage = `Payment Complete!\nRs. ${fee} authorized via ${selectedGateway}. Rating of ${rating} stars saved!`;
@@ -337,6 +354,11 @@ export default function BookingsScreen() {
                       <Text className="text-gray-400 text-xs mt-1">
                         Host: {b.host_id?.full_name || 'Verified Host'} • {b.host_id?.phone_number}
                       </Text>
+                      {b.spot_id?.special_instructions ? (
+                        <Text className="text-gray-300 text-xs mt-1.5 bg-[#0B0F19] p-2.5 rounded-xl border border-gray-800">
+                          📝 {b.spot_id.special_instructions}
+                        </Text>
+                      ) : null}
 
                       {/* Live Ticking Timer Display */}
                       {isParkingNow && (
@@ -353,14 +375,22 @@ export default function BookingsScreen() {
                       {/* Action Triggers */}
                       <View className="mt-4 pt-4 border-t border-gray-800 flex-row gap-3">
                         {!isParkingNow ? (
-                          <TouchableOpacity
-                            onPress={() => handleCheckIn(b._id)}
-                            className="flex-1 bg-[#10B981] py-3.5 rounded-xl items-center"
-                          >
-                            <Text className="text-[#0B0F19] font-bold text-sm">
-                              Check-In (Arrived)
-                            </Text>
-                          </TouchableOpacity>
+                          <>
+                            <TouchableOpacity
+                              onPress={() => handleGetDirections(b)}
+                              className="bg-[#0B0F19] px-4 py-3.5 rounded-xl items-center border border-[#10B981]/40"
+                            >
+                              <Text className="text-[#10B981] font-bold text-sm">🧭 Directions</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleCheckIn(b._id)}
+                              className="flex-1 bg-[#10B981] py-3.5 rounded-xl items-center"
+                            >
+                              <Text className="text-[#0B0F19] font-bold text-sm">
+                                Check-In (Arrived)
+                              </Text>
+                            </TouchableOpacity>
+                          </>
                         ) : (
                           <TouchableOpacity
                             onPress={() => handleCheckOut(b)}
@@ -570,7 +600,7 @@ export default function BookingsScreen() {
           </View>
         </View>
       </Modal>
-      
+
       {/* 7. Official Digital Invoice Modal (FR-16) */}
       <Modal visible={!!selectedInvoice} animationType="slide" transparent>
         <View className="flex-1 justify-end bg-black/80">

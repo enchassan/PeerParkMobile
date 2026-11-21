@@ -61,6 +61,7 @@ export default function HostScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [spots, setSpots] = useState<ParkingSpot[]>([]);
   const [pendingBookings, setPendingBookings] = useState<BookingRequest[]>([]);
+  const [activeBookings, setActiveBookings] = useState<BookingRequest[]>([]);
   const [totalEarnings, setTotalEarnings] = useState<number>(0);
 
   // Add Spot Modal State
@@ -104,6 +105,11 @@ export default function HostScreen() {
 
       const pending = myBookings.filter((b) => b.booking_status === 'Pending');
       setPendingBookings(pending);
+
+      const active = myBookings.filter((b) =>
+        ['Confirmed', 'Active_Parking'].includes(b.booking_status)
+      );
+      setActiveBookings(active);
 
       const earnings = myBookings
         .filter((b) => b.booking_status === 'Completed')
@@ -170,7 +176,7 @@ export default function HostScreen() {
           : 'The time slot has been released back to your calendar.'
       );
 
-      setPendingBookings((prev) => prev.filter((b) => b._id !== bookingId));
+      await loadHostData();
     } catch (error: any) {
       Alert.alert('Decision Failed', error.response?.data?.message || 'Could not update booking.');
     }
@@ -387,7 +393,7 @@ export default function HostScreen() {
         </View>
 
         {/* 3. Pending Booking Requests Section */}
-        <View className="mb-8">
+        <View className="mb-6">
           <Text className="text-white text-base font-bold uppercase tracking-wider mb-3">
             Pending Requests ({pendingBookings.length})
           </Text>
@@ -444,9 +450,63 @@ export default function HostScreen() {
             </View>
           )}
         </View>
+
+        {/* 4. Active & Upcoming Sessions Section */}
+        <View className="mb-10">
+          <Text className="text-white text-base font-bold uppercase tracking-wider mb-3">
+            Active & Upcoming ({activeBookings.length})
+          </Text>
+
+          {activeBookings.length === 0 ? (
+            <View className="bg-[#1A2235]/60 p-5 rounded-2xl border border-gray-800 items-center">
+              <Text className="text-gray-400 text-xs">No confirmed or active drivers right now.</Text>
+            </View>
+          ) : (
+            <View className="space-y-3">
+              {activeBookings.map((b) => {
+                const isParked = b.booking_status === 'Active_Parking';
+                return (
+                  <View
+                    key={b._id}
+                    className={`bg-[#1A2235] p-4 rounded-2xl border ${
+                      isParked ? 'border-sky-500/40' : 'border-emerald-500/30'
+                    }`}
+                  >
+                    <View className="flex-row justify-between items-start mb-1.5">
+                      <View className="flex-1 pr-2">
+                        <Text className="text-white font-bold text-sm">
+                          {b.driver_id?.full_name || 'Driver'}
+                        </Text>
+                        <Text className="text-gray-400 text-xs">
+                          {b.spot_id?.street_address || 'Your Driveway'}
+                        </Text>
+                      </View>
+                      <View
+                        className={`px-2.5 py-1 rounded-full ${
+                          isParked ? 'bg-sky-500/15' : 'bg-emerald-500/15'
+                        }`}
+                      >
+                        <Text
+                          className={`text-[10px] font-bold uppercase ${
+                            isParked ? 'text-sky-400' : 'text-emerald-400'
+                          }`}
+                        >
+                          {isParked ? 'Parked Now' : 'Confirmed'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text className="text-gray-400 text-xs">
+                      Phone: {b.driver_id?.phone_number || 'N/A'} • Est. Rs. {b.total_fee}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
       </ScrollView>
 
-      {/* 4. "Add New Space" Modal with Interactive Map Pin-Drop */}
+      {/* 5. "Add New Space" Modal with Interactive Map Pin-Drop */}
       <Modal visible={showAddModal} animationType="slide" transparent>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
