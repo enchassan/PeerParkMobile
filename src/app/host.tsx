@@ -64,7 +64,7 @@ export default function HostScreen() {
   const [activeBookings, setActiveBookings] = useState<BookingRequest[]>([]);
   const [totalEarnings, setTotalEarnings] = useState<number>(0);
 
-  // Add Spot Modal State
+  // Add / Edit Spot Modal State
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingSpotId, setEditingSpotId] = useState<string | null>(null);
   const [newAddress, setNewAddress] = useState('');
@@ -77,11 +77,22 @@ export default function HostScreen() {
     lat: 31.5204, // Default: Lahore
   });
 
-  // 1. Load Host Profile & Data
+  // 1. Load Host Profile & Data (with live /auth/me verification sync)
   const loadHostData = useCallback(async () => {
     try {
       const storedUserData = await storage.getItem('userData');
-      const user = storedUserData ? JSON.parse(storedUserData) : null;
+      let user = storedUserData ? JSON.parse(storedUserData) : null;
+
+      try {
+        const meRes = await api.get('/auth/me');
+        if (meRes.data?.user) {
+          user = meRes.data.user;
+          await storage.setItem('userData', JSON.stringify(user));
+        }
+      } catch (e) {
+        // Fall back to cached userData if offline
+      }
+
       setHostUser(user);
       const userId = user?.id || user?._id;
 
@@ -108,7 +119,7 @@ export default function HostScreen() {
       setPendingBookings(pending);
 
       const active = myBookings.filter((b) =>
-        ['Confirmed', 'Active_Parking'].includes(b.booking_status)
+        ['Confirmed', 'Active_Parking'].includes(b.booking_status),
       );
       setActiveBookings(active);
 
@@ -133,79 +144,108 @@ export default function HostScreen() {
     loadHostData();
   };
 
- // Center mini-map on host's current GPS when opening Add New Space
-const openAddSpotModal = async () => {
-  setEditingSpotId(null);
-  setNewAddress('');
-  setSpecialInstructions('');
-  setNewRate('150');
-  setShowAddModal(true);
-  try {
-    const { status } = await Location.requestForegroundPermissionsAsync();
-    if (status === 'granted') {
-      const loc = await Location.getCurrentPositionAsync({});
-      const lat = loc.coords.latitude;
-      const lng = loc.coords.longitude;
-      setCoords({ lat, lng });
-      miniMapRef.current?.animateToRegion(
-        { latitude: lat, longitude: lng, latitudeDelta: 0.015, longitudeDelta: 0.015 },
-        500
+  // Center mini-map on host's current GPS when opening Add New Space
+  const openAddSpotModal = async () => {
+    if (hostUser && !hostUser.is_profile_verified) {
+      Alert.alert(
+        'Verification Pending',
+        'Your CNIC is awaiting Admin approval. Once approved in the Admin Panel, pull down to refresh and list your spot.',
       );
+      return;
     }
-  } catch (err) {
-    // Keep default Lahore coordinates if GPS unavailable
-  }
-};
 
-// Pre-fill modal for editing an existing spot
-const openEditSpotModal = (spot: ParkingSpot) => {
-  const [lng, lat] = spot.location?.coordinates || [74.3587, 31.5204];
-  setEditingSpotId(spot._id);
-  setNewAddress(spot.street_address);
-  setSpecialInstructions(spot.special_instructions || '');
-  setNewRate(String(spot.hourly_rate));
-  setCoords({ lat, lng });
-  setShowAddModal(true);
-  setTimeout(() => {
-    miniMapRef.current?.animateToRegion(
-      { latitude: lat, longitude: lng, latitudeDelta: 0.015, longitudeDelta: 0.015 },
-      400
-    );
-  }, 200);
-};
+    setEditingSpotId(null);
+    setNewAddress('');
+    setSpecialInstructions('');
+    setNewRate('150');
+    setShowAddModal(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({});
+        const lat = loc.coords.latitude;
+        const lng = loc.coords.longitude;
+        setCoords({ lat, lng });
+        miniMapRef.current?.animateToRegion(
+          {
+            latitude: lat,
+            longitude: lng,
+            latitudeDelta: 0.015,
+            longitudeDelta: 0.015,
+          },
+          500,
+        );
+      }
+    } catch (err) {
+      // Keep default Lahore coordinates if GPS unavailable
+    }
+  };
+
+  // Pre-fill modal for editing an existing spot
+  const openEditSpotModal = (spot: ParkingSpot) => {
+    const [lng, lat] = spot.location?.coordinates || [74.3587, 31.5204];
+    setEditingSpotId(spot._id);
+    setNewAddress(spot.street_address);
+    setSpecialInstructions(spot.special_instructions || '');
+    setNewRate(String(spot.hourly_rate));
+    setCoords({ lat, lng });
+    setShowAddModal(true);
+    setTimeout(() => {
+      miniMapRef.current?.animateToRegion(
+        {
+          latitude: lat,
+          longitude: lng,
+          latitudeDelta: 0.015,
+          longitudeDelta: 0.015,
+        },
+        400,
+      );
+    }, 200);
+  };
 
   // 2. Toggle Spot Visibility
   const handleToggleSpot = async (spotId: string) => {
     try {
       await api.patch(`/spots/${spotId}/toggle`);
       setSpots((prev) =>
-        prev.map((s) => (s._id === spotId ? { ...s, is_active: !s.is_active } : s))
+        prev.map((s) =>
+          s._id === spotId ? { ...s, is_active: !s.is_active } : s,
+        ),
       );
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.message || 'Failed to toggle visibility.');
+      Alert.alert(
+        'Error',
+        error.response?.data?.message || 'Failed to toggle visibility.',
+      );
     }
   };
 
   const handleDeleteSpot = (spotId: string) => {
-  Alert.alert('Delete Spot', 'Remove this parking space permanently?', [
-    { text: 'Cancel', style: 'cancel' },
-    {
-      text: 'Delete',
-      style: 'destructive',
-      onPress: async () => {
-        try {
-          await api.delete(`/spots/${spotId}`);
-          setSpots((prev) => prev.filter((s) => s._id !== spotId));
-        } catch (error: any) {
-          Alert.alert('Error', error.response?.data?.message || 'Failed to delete spot.');
-        }
+    Alert.alert('Delete Spot', 'Remove this parking space permanently?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await api.delete(`/spots/${spotId}`);
+            setSpots((prev) => prev.filter((s) => s._id !== spotId));
+          } catch (error: any) {
+            Alert.alert(
+              'Error',
+              error.response?.data?.message || 'Failed to delete spot.',
+            );
+          }
+        },
       },
-    },
-  ]);
-};
+    ]);
+  };
 
   // 3. Respond to Incoming Booking Request
-  const handleBookingDecision = async (bookingId: string, decision: 'Accept' | 'Decline') => {
+  const handleBookingDecision = async (
+    bookingId: string,
+    decision: 'Accept' | 'Decline',
+  ) => {
     try {
       await api.patch(`/bookings/${bookingId}/respond`, { decision });
 
@@ -213,19 +253,25 @@ const openEditSpotModal = (spot: ParkingSpot) => {
         decision === 'Accept' ? 'Booking Accepted!' : 'Booking Declined',
         decision === 'Accept'
           ? 'The driver has been notified to proceed with payment and parking.'
-          : 'The time slot has been released back to your calendar.'
+          : 'The time slot has been released back to your calendar.',
       );
 
       await loadHostData();
     } catch (error: any) {
-      Alert.alert('Decision Failed', error.response?.data?.message || 'Could not update booking.');
+      Alert.alert(
+        'Decision Failed',
+        error.response?.data?.message || 'Could not update booking.',
+      );
     }
   };
 
   // 4. Jump Pin to Address using Nominatim
   const handleAutoGeocode = async () => {
     if (!newAddress.trim()) {
-      Alert.alert('Address Required', 'Please enter a street address to locate.');
+      Alert.alert(
+        'Address Required',
+        'Please enter a street address to locate.',
+      );
       return;
     }
 
@@ -233,7 +279,7 @@ const openEditSpotModal = (spot: ParkingSpot) => {
     try {
       const query = `${newAddress.trim()}, Lahore, Pakistan`;
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-        query
+        query,
       )}&limit=1`;
 
       const response = await axios.get(url, {
@@ -245,72 +291,88 @@ const openEditSpotModal = (spot: ParkingSpot) => {
         const lon = parseFloat(response.data[0].lon);
         setCoords({ lat, lng: lon });
         miniMapRef.current?.animateToRegion(
-          { latitude: lat, longitude: lon, latitudeDelta: 0.015, longitudeDelta: 0.015 },
-          600
+          {
+            latitude: lat,
+            longitude: lon,
+            latitudeDelta: 0.015,
+            longitudeDelta: 0.015,
+          },
+          600,
         );
       } else {
         Alert.alert(
           'Pin Not Found Automatically',
-          'Tap directly on the map or drag the red pin to mark your exact spot.'
+          'Tap directly on the map or drag the red pin to mark your exact spot.',
         );
       }
     } catch (err) {
-      Alert.alert('Notice', 'Could not reach geocoder. Drag the pin on the map to your exact spot.');
+      Alert.alert(
+        'Notice',
+        'Could not reach geocoder. Drag the pin on the map to your exact spot.',
+      );
     } finally {
       setGeocoding(false);
     }
   };
 
-  // 5. Submit New Parking Spot
+  // 5. Create or Update Parking Spot
   const handleSaveSpot = async () => {
-  if (!newAddress.trim() || !newRate.trim()) {
-    Alert.alert('Required Fields', 'Please provide an address and hourly rate.');
-    return;
-  }
-
-  setCreatingSpot(true);
-  try {
-    const payload = {
-      street_address: newAddress.trim(),
-      special_instructions: specialInstructions.trim(),
-      hourly_rate: Number(newRate),
-      location: {
-        type: 'Point',
-        coordinates: [coords.lng, coords.lat],
-      },
-    };
-
-    if (editingSpotId) {
-      const response = await api.patch(`/spots/${editingSpotId}`, payload);
-      const updated = response.data?.spot;
-      if (updated) {
-        setSpots((prev) => prev.map((s) => (s._id === editingSpotId ? updated : s)));
-      }
-      setShowAddModal(false);
-      setEditingSpotId(null);
-      Alert.alert('Spot Updated!', 'Your changes are now live.');
-    } else {
-      const response = await api.post('/spots/create', {
-        ...payload,
-        is_active: true,
-        spot_status: 'Approved',
-      });
-      const created = response.data?.spot;
-      if (created) {
-        setSpots((prev) => [created, ...prev]);
-        setShowAddModal(false);
-        Alert.alert('Spot Created!', 'Your parking space is now live on the driver map.');
-      }
+    if (!newAddress.trim() || !newRate.trim()) {
+      Alert.alert(
+        'Required Fields',
+        'Please provide an address and hourly rate.',
+      );
+      return;
     }
-  } catch (error: any) {
-    Alert.alert(
-      editingSpotId ? 'Update Failed' : 'Creation Failed',
-      error.response?.data?.message || 'Could not save spot.'
-    );
-  } finally {
-    setCreatingSpot(false);
-  }
-};
+
+    setCreatingSpot(true);
+    try {
+      const payload = {
+        street_address: newAddress.trim(),
+        special_instructions: specialInstructions.trim(),
+        hourly_rate: Number(newRate),
+        location: {
+          type: 'Point',
+          coordinates: [coords.lng, coords.lat],
+        },
+      };
+
+      if (editingSpotId) {
+        const response = await api.patch(`/spots/${editingSpotId}`, payload);
+        const updated = response.data?.spot;
+        if (updated) {
+          setSpots((prev) =>
+            prev.map((s) => (s._id === editingSpotId ? updated : s)),
+          );
+        }
+        setShowAddModal(false);
+        setEditingSpotId(null);
+        Alert.alert('Spot Updated!', 'Your changes are now live.');
+      } else {
+        const response = await api.post('/spots/create', {
+          ...payload,
+          is_active: true,
+          spot_status: 'Approved',
+        });
+        const created = response.data?.spot;
+        if (created) {
+          setSpots((prev) => [created, ...prev]);
+          setShowAddModal(false);
+          Alert.alert(
+            'Spot Created!',
+            'Your parking space is now live on the driver map.',
+          );
+        }
+      }
+    } catch (error: any) {
+      Alert.alert(
+        editingSpotId ? 'Update Failed' : 'Creation Failed',
+        error.response?.data?.message || 'Could not save spot.',
+      );
+    } finally {
+      setCreatingSpot(false);
+    }
+  };
 
   // 6. Logout
   const handleLogout = async () => {
@@ -324,7 +386,9 @@ const openEditSpotModal = (spot: ParkingSpot) => {
     return (
       <View className="flex-1 justify-center items-center bg-[#0B0F19]">
         <ActivityIndicator size="large" color="#10B981" />
-        <Text className="text-gray-400 mt-3 text-sm">Loading Host Command Center...</Text>
+        <Text className="text-gray-400 mt-3 text-sm">
+          Loading Host Command Center...
+        </Text>
       </View>
     );
   }
@@ -333,10 +397,16 @@ const openEditSpotModal = (spot: ParkingSpot) => {
     <View className="flex-1 bg-[#0B0F19]">
       <ScrollView
         className="flex-1 px-5 pt-12 pb-8"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#10B981" />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#10B981"
+          />
+        }
       >
         {/* Top Header */}
-        <View className="flex-row items-center justify-between mb-6">
+        <View className="flex-row items-center justify-between mb-4">
           <View>
             <Text className="text-xs uppercase tracking-wider text-[#10B981] font-semibold">
               Host Command Center
@@ -349,9 +419,30 @@ const openEditSpotModal = (spot: ParkingSpot) => {
             onPress={handleLogout}
             className="bg-[#1A2235] px-3.5 py-2 rounded-xl border border-gray-800"
           >
-            <Text className="text-gray-300 text-xs font-semibold">Sign Out</Text>
+            <Text className="text-gray-300 text-xs font-semibold">
+              Sign Out
+            </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Verification Status Banner */}
+        {hostUser && !hostUser.is_profile_verified ? (
+          <View className="bg-amber-500/15 p-4 rounded-2xl border border-amber-500/40 mb-5">
+            <Text className="text-amber-400 text-xs font-extrabold uppercase tracking-wider">
+              ⏳ CNIC Verification Pending
+            </Text>
+            <Text className="text-gray-300 text-xs mt-1 leading-4">
+              Your host profile is awaiting Admin approval. Spot creation is
+              locked until verified—pull down to refresh once approved.
+            </Text>
+          </View>
+        ) : (
+          <View className="self-start bg-emerald-500/15 px-3 py-1 rounded-full border border-emerald-500/30 mb-5">
+            <Text className="text-emerald-400 text-[11px] font-bold">
+              ✓ CNIC Verified Host
+            </Text>
+          </View>
+        )}
 
         {/* 1. Net Earnings Card */}
         <View className="bg-[#1A2235] p-6 rounded-3xl border border-gray-800 mb-6 shadow-xl">
@@ -367,7 +458,8 @@ const openEditSpotModal = (spot: ParkingSpot) => {
           <View className="flex-row items-center gap-2 mt-4 pt-3 border-t border-gray-800">
             <View className="h-2 w-2 rounded-full bg-[#10B981]" />
             <Text className="text-gray-400 text-xs">
-              {spots.length} spaces registered • Auto-clearing via JazzCash/EasyPaisa
+              {spots.length} spaces registered • Auto-clearing via
+              JazzCash/EasyPaisa
             </Text>
           </View>
         </View>
@@ -382,18 +474,24 @@ const openEditSpotModal = (spot: ParkingSpot) => {
               onPress={openAddSpotModal}
               className="bg-[#10B981] px-3 py-1.5 rounded-xl active:opacity-90"
             >
-              <Text className="text-[#0B0F19] text-xs font-bold">+ Add New</Text>
+              <Text className="text-[#0B0F19] text-xs font-bold">
+                + Add New
+              </Text>
             </TouchableOpacity>
           </View>
 
           {spots.length === 0 ? (
             <View className="bg-[#1A2235]/60 p-6 rounded-2xl border border-gray-800 items-center">
-              <Text className="text-gray-400 text-sm">No parking spots listed yet.</Text>
+              <Text className="text-gray-400 text-sm">
+                No parking spots listed yet.
+              </Text>
               <TouchableOpacity
                 onPress={openAddSpotModal}
                 className="mt-3 bg-[#10B981]/20 px-4 py-2 rounded-xl border border-[#10B981]/40"
               >
-                <Text className="text-[#10B981] text-xs font-bold">List Your Driveway</Text>
+                <Text className="text-[#10B981] text-xs font-bold">
+                  List Your Driveway
+                </Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -405,11 +503,17 @@ const openEditSpotModal = (spot: ParkingSpot) => {
                 >
                   <View className="flex-row items-center justify-between">
                     <View className="flex-1 pr-3">
-                      <Text className="text-white font-bold text-sm" numberOfLines={1}>
+                      <Text
+                        className="text-white font-bold text-sm"
+                        numberOfLines={1}
+                      >
                         {spot.street_address}
                       </Text>
                       {spot.special_instructions ? (
-                        <Text className="text-gray-400 text-[11px] mt-0.5" numberOfLines={1}>
+                        <Text
+                          className="text-gray-400 text-[11px] mt-0.5"
+                          numberOfLines={1}
+                        >
                           {spot.special_instructions}
                         </Text>
                       ) : null}
@@ -420,7 +524,9 @@ const openEditSpotModal = (spot: ParkingSpot) => {
                         <Text className="text-gray-500 text-[10px]">•</Text>
                         <Text
                           className={`text-[10px] font-semibold ${
-                            spot.spot_status === 'Approved' ? 'text-emerald-400' : 'text-amber-400'
+                            spot.spot_status === 'Approved'
+                              ? 'text-emerald-400'
+                              : 'text-amber-400'
                           }`}
                         >
                           {spot.spot_status}
@@ -446,13 +552,17 @@ const openEditSpotModal = (spot: ParkingSpot) => {
                       onPress={() => openEditSpotModal(spot)}
                       className="flex-1 bg-[#0B0F19] py-2 rounded-xl items-center border border-gray-700"
                     >
-                      <Text className="text-gray-200 text-xs font-bold">✏️ Edit Details</Text>
+                      <Text className="text-gray-200 text-xs font-bold">
+                        ✏️ Edit Details
+                      </Text>
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={() => handleDeleteSpot(spot._id)}
                       className="bg-rose-500/15 px-4 py-2 rounded-xl items-center border border-rose-500/30"
                     >
-                      <Text className="text-rose-400 text-xs font-bold">Delete</Text>
+                      <Text className="text-rose-400 text-xs font-bold">
+                        Delete
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -469,7 +579,9 @@ const openEditSpotModal = (spot: ParkingSpot) => {
 
           {pendingBookings.length === 0 ? (
             <View className="bg-[#1A2235]/60 p-5 rounded-2xl border border-gray-800 items-center">
-              <Text className="text-gray-400 text-xs">No pending reservation requests right now.</Text>
+              <Text className="text-gray-400 text-xs">
+                No pending reservation requests right now.
+              </Text>
             </View>
           ) : (
             <View className="space-y-3">
@@ -504,14 +616,18 @@ const openEditSpotModal = (spot: ParkingSpot) => {
                       onPress={() => handleBookingDecision(b._id, 'Decline')}
                       className="flex-1 bg-[#0B0F19] py-2.5 rounded-xl items-center border border-rose-500/40"
                     >
-                      <Text className="text-rose-400 font-bold text-xs">Decline</Text>
+                      <Text className="text-rose-400 font-bold text-xs">
+                        Decline
+                      </Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                       onPress={() => handleBookingDecision(b._id, 'Accept')}
                       className="flex-1 bg-[#10B981] py-2.5 rounded-xl items-center"
                     >
-                      <Text className="text-[#0B0F19] font-bold text-xs">Accept Booking</Text>
+                      <Text className="text-[#0B0F19] font-bold text-xs">
+                        Accept Booking
+                      </Text>
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -528,7 +644,9 @@ const openEditSpotModal = (spot: ParkingSpot) => {
 
           {activeBookings.length === 0 ? (
             <View className="bg-[#1A2235]/60 p-5 rounded-2xl border border-gray-800 items-center">
-              <Text className="text-gray-400 text-xs">No confirmed or active drivers right now.</Text>
+              <Text className="text-gray-400 text-xs">
+                No confirmed or active drivers right now.
+              </Text>
             </View>
           ) : (
             <View className="space-y-3">
@@ -565,7 +683,8 @@ const openEditSpotModal = (spot: ParkingSpot) => {
                       </View>
                     </View>
                     <Text className="text-gray-400 text-xs">
-                      Phone: {b.driver_id?.phone_number || 'N/A'} • Est. Rs. {b.total_fee}
+                      Phone: {b.driver_id?.phone_number || 'N/A'} • Est. Rs.{' '}
+                      {b.total_fee}
                     </Text>
                   </View>
                 );
@@ -575,7 +694,7 @@ const openEditSpotModal = (spot: ParkingSpot) => {
         </View>
       </ScrollView>
 
-      {/* 5. "Add New Space" Modal with Interactive Map Pin-Drop */}
+      {/* 5. "Add / Edit Space" Modal with Interactive Map Pin-Drop */}
       <Modal visible={showAddModal} animationType="slide" transparent>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -583,18 +702,26 @@ const openEditSpotModal = (spot: ParkingSpot) => {
         >
           <View className="bg-[#1A2235] p-6 rounded-t-3xl border-t border-gray-800 max-h-[90%]">
             <View className="flex-row justify-between items-center mb-4">
-              <Text className="text-white text-xl font-bold">{editingSpotId ? 'Edit Parking Space' : 'List a Parking Space'}</Text>
+              <Text className="text-white text-xl font-bold">
+                {editingSpotId ? 'Edit Parking Space' : 'List a Parking Space'}
+              </Text>
               <TouchableOpacity onPress={() => setShowAddModal(false)}>
                 <Text className="text-gray-400 text-lg font-bold">✕</Text>
               </TouchableOpacity>
             </View>
 
-            <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
               {/* Interactive Mini-Map Pin Drop */}
               <Text className="text-gray-300 text-xs font-semibold mb-1.5">
                 Tap Map or Drag Pin to Exact Driveway
               </Text>
-              <View className="rounded-2xl overflow-hidden border border-gray-700 mb-3" style={{ height: 200 }}>
+              <View
+                className="rounded-2xl overflow-hidden border border-gray-700 mb-3"
+                style={{ height: 200 }}
+              >
                 <MapView
                   ref={miniMapRef}
                   style={{ width: '100%', height: '100%' }}
@@ -703,7 +830,9 @@ const openEditSpotModal = (spot: ParkingSpot) => {
                 {creatingSpot ? (
                   <ActivityIndicator color="#0B0F19" />
                 ) : (
-                  <Text className="text-[#0B0F19] font-bold text-base">{editingSpotId ? 'Save Changes' : 'Submit Space Listing'}</Text>
+                  <Text className="text-[#0B0F19] font-bold text-base">
+                    {editingSpotId ? 'Save Changes' : 'Submit Space Listing'}
+                  </Text>
                 )}
               </TouchableOpacity>
             </ScrollView>
