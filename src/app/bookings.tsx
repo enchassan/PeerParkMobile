@@ -46,7 +46,7 @@ interface Booking {
   rating?: number;
   review_comment?: string;
   payment_gateway?: string;
-  booking_status: 'Pending' | 'Confirmed' | 'Active_Parking' | 'Completed' | 'Declined' | 'Expired';
+  booking_status: 'Pending' | 'Confirmed' | 'Active_Parking' | 'Completed' | 'Declined' | 'Cancelled' | 'Expired';
   createdAt: string;
 }
 
@@ -178,7 +178,42 @@ export default function BookingsScreen() {
     }
   };
 
-  // 4. Open Checkout Modal with Real-Time Overstay Calculation
+  // 4. Cancel Pending or Confirmed Booking
+  const handleCancelBooking = (bookingId: string) => {
+    const performCancel = async () => {
+      try {
+        await api.patch(`/bookings/${bookingId}/cancel`);
+        await loadBookings();
+        if (Platform.OS === 'web') {
+          window.alert('Booking cancelled.');
+        } else {
+          Alert.alert('Cancelled', 'Your booking has been cancelled.');
+        }
+      } catch (error: any) {
+        const msg = error.response?.data?.message || 'Could not cancel booking.';
+        if (Platform.OS === 'web') {
+          window.alert(msg);
+        } else {
+          Alert.alert('Cancel Error', msg);
+        }
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm('Cancel this booking request?')) performCancel();
+    } else {
+      Alert.alert(
+        'Cancel Booking',
+        'Are you sure you want to cancel this reservation?',
+        [
+          { text: 'Keep Booking', style: 'cancel' },
+          { text: 'Yes, Cancel', style: 'destructive', onPress: performCancel },
+        ]
+      );
+    }
+  };
+
+  // 5. Open Checkout Modal with Real-Time Overstay Calculation
   const handleCheckOut = (booking: Booking) => {
     const scheduledEnd = new Date(booking.scheduled_checkout).getTime();
     const now = Date.now();
@@ -204,7 +239,7 @@ export default function BookingsScreen() {
     setShowCheckoutModal(true);
   };
 
-  // 5. Final Payment & Rating Settlement
+  // 6. Final Payment & Rating Settlement
   const handleConfirmPayment = async () => {
     if (!checkoutBooking) return;
 
@@ -248,8 +283,8 @@ export default function BookingsScreen() {
     (b) => b.booking_status === 'Confirmed' || b.booking_status === 'Active_Parking'
   );
   const pendingList = bookings.filter((b) => b.booking_status === 'Pending');
-  const completedList = bookings.filter(
-    (b) => b.booking_status === 'Completed' || b.booking_status === 'Declined'
+  const completedList = bookings.filter((b) =>
+    ['Completed', 'Declined', 'Cancelled'].includes(b.booking_status)
   );
 
   if (loading) {
@@ -379,12 +414,12 @@ export default function BookingsScreen() {
                       )}
 
                       {/* Action Triggers */}
-                      <View className="mt-4 pt-4 border-t border-gray-800 flex-row gap-3">
+                      <View className="mt-4 pt-4 border-t border-gray-800 flex-row gap-2">
                         {!isParkingNow ? (
                           <>
                             <TouchableOpacity
                               onPress={() => handleGetDirections(b)}
-                              className="bg-[#0B0F19] px-4 py-3.5 rounded-xl items-center border border-[#10B981]/40"
+                              className="bg-[#0B0F19] px-3.5 py-3.5 rounded-xl items-center border border-[#10B981]/40"
                             >
                               <Text className="text-[#10B981] font-bold text-sm">🧭 Directions</Text>
                             </TouchableOpacity>
@@ -393,8 +428,14 @@ export default function BookingsScreen() {
                               className="flex-1 bg-[#10B981] py-3.5 rounded-xl items-center"
                             >
                               <Text className="text-[#0B0F19] font-bold text-sm">
-                                Check-In (Arrived)
+                                Check-In
                               </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={() => handleCancelBooking(b._id)}
+                              className="bg-rose-500/15 px-3.5 py-3.5 rounded-xl items-center border border-rose-500/30"
+                            >
+                              <Text className="text-rose-400 font-bold text-sm">Cancel</Text>
                             </TouchableOpacity>
                           </>
                         ) : (
@@ -450,6 +491,13 @@ export default function BookingsScreen() {
                         {new Date(b.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </Text>
                     </View>
+
+                    <TouchableOpacity
+                      onPress={() => handleCancelBooking(b._id)}
+                      className="mt-3 bg-rose-500/15 py-2.5 rounded-xl items-center border border-rose-500/30"
+                    >
+                      <Text className="text-rose-400 font-bold text-xs">Cancel Request</Text>
+                    </TouchableOpacity>
                   </View>
                 ))
               )}
@@ -467,8 +515,10 @@ export default function BookingsScreen() {
                 completedList.map((b) => (
                   <TouchableOpacity
                     key={b._id}
-                    onPress={() => setSelectedInvoice(b)}
-                    activeOpacity={0.8}
+                    onPress={() => {
+                      if (b.booking_status === 'Completed') setSelectedInvoice(b);
+                    }}
+                    activeOpacity={b.booking_status === 'Completed' ? 0.8 : 1}
                     className="bg-[#1A2235] p-5 rounded-2xl border border-gray-800 active:border-[#10B981]/50"
                   >
                     <View className="flex-row items-start justify-between">
@@ -477,26 +527,41 @@ export default function BookingsScreen() {
                           {b.spot_id?.street_address || 'Parking Location'}
                         </Text>
                         <Text className="text-gray-400 text-xs mt-1">
-                          {new Date(b.createdAt).toLocaleDateString()} • {b.payment_gateway || 'EasyPaisa'}
+                          {new Date(b.createdAt).toLocaleDateString()} •{' '}
+                          {b.booking_status === 'Completed'
+                            ? b.payment_gateway || 'EasyPaisa'
+                            : b.booking_status}
                         </Text>
-                        <Text className="text-[#10B981] text-[11px] font-semibold mt-2">
-                          View Digital Invoice
-                          {!!b.review_comment && (
-                            <Text className="text-gray-300 text-xs italic mt-1.5" numberOfLines={2}>
-                              "{b.review_comment}"
-                            </Text>
-                          )}
-                        </Text>
+                        {b.booking_status === 'Completed' && (
+                          <Text className="text-[#10B981] text-[11px] font-semibold mt-2">
+                            🧾 View Digital Invoice
+                          </Text>
+                        )}
+                        {!!b.review_comment && (
+                          <Text className="text-gray-300 text-xs italic mt-1.5" numberOfLines={2}>
+                            "{b.review_comment}"
+                          </Text>
+                        )}
                       </View>
                       <View className="items-end">
-                        <Text className="text-[#10B981] font-extrabold text-base">
+                        <Text
+                          className={`font-extrabold text-base ${
+                            b.booking_status === 'Completed' ? 'text-[#10B981]' : 'text-gray-400'
+                          }`}
+                        >
                           Rs. {b.total_fee}
                         </Text>
-                        <View className="flex-  row items-center gap-1 mt-1">
-                          <Text className="text-amber-400 text-xs font-bold">
-                            ★ {b.rating || 5}.0
+                        {b.booking_status === 'Completed' ? (
+                          <View className="flex-row items-center gap-1 mt-1">
+                            <Text className="text-amber-400 text-xs font-bold">
+                              ★ {b.rating || 5}.0
+                            </Text>
+                          </View>
+                        ) : (
+                          <Text className="text-rose-400 text-[11px] font-bold mt-1">
+                            {b.booking_status}
                           </Text>
-                        </View>
+                        )}
                       </View>
                     </View>
                   </TouchableOpacity>
@@ -605,7 +670,7 @@ export default function BookingsScreen() {
               className="bg-[#0B0F19] text-white text-xs p-3 rounded-xl border border-gray-800 mb-5"
               style={{ minHeight: 64, textAlignVertical: 'top' }}
             />
-            
+
             {/* Confirm & Pay CTA */}
             <TouchableOpacity
               onPress={handleConfirmPayment}
