@@ -10,6 +10,7 @@ import {
   RefreshControl,
   Platform,
   Linking,
+  TextInput,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { storage } from '../services/storage';
@@ -43,6 +44,7 @@ interface Booking {
   overstay_hours?: number;
   overstay_fee?: number;
   rating?: number;
+  review_comment?: string;
   payment_gateway?: string;
   booking_status: 'Pending' | 'Confirmed' | 'Active_Parking' | 'Completed' | 'Declined' | 'Expired';
   createdAt: string;
@@ -66,6 +68,7 @@ export default function BookingsScreen() {
   const [checkoutBooking, setCheckoutBooking] = useState<Booking | null>(null);
   const [selectedGateway, setSelectedGateway] = useState<PaymentGateway>('EasyPaisa');
   const [rating, setRating] = useState<number>(5);
+  const [reviewComment, setReviewComment] = useState<string>('');
   const [processingPayment, setProcessingPayment] = useState<boolean>(false);
 
   // Invoice Receipt Modal State (FR-16)
@@ -209,6 +212,7 @@ export default function BookingsScreen() {
     try {
       await api.patch(`/bookings/${checkoutBooking._id}/checkout`, {
         rating,
+        review_comment: reviewComment.trim(),
         payment_gateway: selectedGateway,
       });
 
@@ -216,6 +220,8 @@ export default function BookingsScreen() {
       const fee = checkoutBooking.total_fee;
       setCheckoutBooking(null);
       setActiveSession(null);
+      setRating(5);
+      setReviewComment('');
       setTab('completed');
 
       await loadBookings();
@@ -474,14 +480,19 @@ export default function BookingsScreen() {
                           {new Date(b.createdAt).toLocaleDateString()} • {b.payment_gateway || 'EasyPaisa'}
                         </Text>
                         <Text className="text-[#10B981] text-[11px] font-semibold mt-2">
-                          🧾 View Digital Invoice
+                          View Digital Invoice
+                          {!!b.review_comment && (
+                            <Text className="text-gray-300 text-xs italic mt-1.5" numberOfLines={2}>
+                              "{b.review_comment}"
+                            </Text>
+                          )}
                         </Text>
                       </View>
                       <View className="items-end">
                         <Text className="text-[#10B981] font-extrabold text-base">
                           Rs. {b.total_fee}
                         </Text>
-                        <View className="flex-row items-center gap-1 mt-1">
+                        <View className="flex-  row items-center gap-1 mt-1">
                           <Text className="text-amber-400 text-xs font-bold">
                             ★ {b.rating || 5}.0
                           </Text>
@@ -583,6 +594,18 @@ export default function BookingsScreen() {
               </View>
             </View>
 
+            {/* Optional Review Comment */}
+            <TextInput
+              value={reviewComment}
+              onChangeText={setReviewComment}
+              placeholder="Optional feedback about the spot or host..."
+              placeholderTextColor="#6B7280"
+              multiline
+              maxLength={250}
+              className="bg-[#0B0F19] text-white text-xs p-3 rounded-xl border border-gray-800 mb-5"
+              style={{ minHeight: 64, textAlignVertical: 'top' }}
+            />
+            
             {/* Confirm & Pay CTA */}
             <TouchableOpacity
               onPress={handleConfirmPayment}

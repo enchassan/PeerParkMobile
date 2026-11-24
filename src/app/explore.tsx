@@ -30,6 +30,8 @@ interface ParkingSpot {
   hourly_rate: number;
   spot_status: string;
   is_active: boolean;
+  host_rating?: number | null;
+  host_review_count?: number;
   location: {
     coordinates: [number, number]; // [longitude, latitude]
   };
@@ -465,6 +467,14 @@ export default function ExploreScreen() {
                 <Text style={styles.spotHostText}>
                   Host: {selectedSpot.host_id?.full_name || 'Verified Resident'}
                   {routeMeta ? ` • ${routeMeta.distanceKm} km away` : ''}
+                </Text>
+                <Text style={{ color: '#FBBF24', fontSize: 12, fontWeight: '700', marginTop: 2 }}>
+                  ★{' '}
+                  {selectedSpot.host_rating
+                    ? `${selectedSpot.host_rating} (${selectedSpot.host_review_count} ${
+                        selectedSpot.host_review_count === 1 ? 'review' : 'reviews'
+                      })`
+                    : 'New Host'}
                 </Text>
                 {selectedSpot.special_instructions ? (
                   <Text style={{ color: '#D1D5DB', fontSize: 12, marginTop: 4 }} numberOfLines={2}>
