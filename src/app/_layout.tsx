@@ -15,6 +15,9 @@ export default function RootLayout() {
 
       {/* Host Dashboard */}
       <Stack.Screen name="host" options={{ headerShown: false }} />
+
+      {/* User Profile */}
+      <Stack.Screen name="profile" options={{ headerShown: false }} />
     </Stack>
   );
 }

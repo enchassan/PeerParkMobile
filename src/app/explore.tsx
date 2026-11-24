@@ -26,7 +26,7 @@ interface Host {
 interface ParkingSpot {
   _id: string;
   street_address: string;
-  special_instructions?: string; 
+  special_instructions?: string;
   hourly_rate: number;
   spot_status: string;
   is_active: boolean;
@@ -48,7 +48,10 @@ export default function ExploreScreen() {
   const mapRef = useRef<MapView | null>(null);
 
   // User's Real Device GPS Location (Never overwritten by search)
-  const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number }>({
+  const [userLocation, setUserLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  }>({
     latitude: 31.5204,
     longitude: 74.3587,
   });
@@ -76,7 +79,9 @@ export default function ExploreScreen() {
   const [loadingSchedule, setLoadingSchedule] = useState(false);
 
   // OSRM Routing State (FR-07)
-  const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
+  const [routeCoords, setRouteCoords] = useState<
+    { latitude: number; longitude: number }[]
+  >([]);
   const [routeMeta, setRouteMeta] = useState<RouteMeta | null>(null);
   const [fetchingRoute, setFetchingRoute] = useState(false);
 
@@ -100,7 +105,11 @@ export default function ExploreScreen() {
     const end = new Date(start.getTime() + bookingHours * 60 * 60 * 1000);
 
     const formatTime = (d: Date) =>
-      d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+      d.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
 
     return {
       start,
@@ -145,7 +154,12 @@ export default function ExploreScreen() {
   }, []);
 
   // 2. Query Nearby Spots from Backend
-  const fetchNearbySpots = async (lat: number, lng: number, radius: number, priceLimit: number) => {
+  const fetchNearbySpots = async (
+    lat: number,
+    lng: number,
+    radius: number,
+    priceLimit: number,
+  ) => {
     try {
       const response = await api.get('/spots/nearby', {
         params: { lat, lng, radius, maxPrice: priceLimit },
@@ -164,7 +178,11 @@ export default function ExploreScreen() {
       const res = await api.get(`/spots/${spotId}/schedule`);
       setSpotAvailability(res.data);
     } catch (err) {
-      setSpotAvailability({ isOccupied: false, badgeText: '🟢 Available Now', nextFreeTime: null });
+      setSpotAvailability({
+        isOccupied: false,
+        badgeText: '🟢 Available Now',
+        nextFreeTime: null,
+      });
     } finally {
       setLoadingSchedule(false);
     }
@@ -185,10 +203,12 @@ export default function ExploreScreen() {
       const route = response.data?.routes?.[0];
 
       if (route && route.geometry?.coordinates) {
-        const points = route.geometry.coordinates.map((pt: [number, number]) => ({
-          latitude: pt[1],
-          longitude: pt[0],
-        }));
+        const points = route.geometry.coordinates.map(
+          (pt: [number, number]) => ({
+            latitude: pt[1],
+            longitude: pt[0],
+          }),
+        );
 
         setRouteCoords(points);
         setRouteMeta({
@@ -202,7 +222,10 @@ export default function ExploreScreen() {
         });
       }
     } catch (err) {
-      Alert.alert('Routing Notice', 'Could not fetch live road directions from OSRM.');
+      Alert.alert(
+        'Routing Notice',
+        'Could not fetch live road directions from OSRM.',
+      );
     } finally {
       setFetchingRoute(false);
     }
@@ -221,7 +244,7 @@ export default function ExploreScreen() {
     try {
       const query = `${searchQuery.trim()}, Lahore, Pakistan`;
       const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-        query
+        query,
       )}&limit=1`;
 
       const response = await axios.get(url, {
@@ -245,7 +268,10 @@ export default function ExploreScreen() {
 
         fetchNearbySpots(targetLat, targetLng, selectedRadius, maxPrice);
       } else {
-        Alert.alert('Area Not Found', 'Could not locate that neighborhood in Lahore.');
+        Alert.alert(
+          'Area Not Found',
+          'Could not locate that neighborhood in Lahore.',
+        );
       }
     } catch (err: any) {
       Alert.alert('Search Error', 'Unable to reach the geocoding service.');
@@ -257,7 +283,12 @@ export default function ExploreScreen() {
   // 6. Apply Filters
   const handleApplyFilters = () => {
     setShowFilterModal(false);
-    fetchNearbySpots(userLocation.latitude, userLocation.longitude, selectedRadius, maxPrice);
+    fetchNearbySpots(
+      userLocation.latitude,
+      userLocation.longitude,
+      selectedRadius,
+      maxPrice,
+    );
   };
 
   // 7. Submit Booking with Selected Arrival Slot
@@ -291,12 +322,13 @@ export default function ExploreScreen() {
             onPress: () => setSelectedSpot(null),
             style: 'cancel',
           },
-        ]
+        ],
       );
     } catch (error: any) {
       Alert.alert(
         'Slot Unavailable',
-        error.response?.data?.message || 'Could not place booking request for this timeframe.'
+        error.response?.data?.message ||
+          'Could not place booking request for this timeframe.',
       );
     } finally {
       setBookingSubmitting(false);
@@ -368,13 +400,17 @@ export default function ExploreScreen() {
               <View
                 style={[
                   styles.markerBadge,
-                  isSelected ? styles.markerBadgeSelected : styles.markerBadgeDefault,
+                  isSelected
+                    ? styles.markerBadgeSelected
+                    : styles.markerBadgeDefault,
                 ]}
               >
                 <Text
                   style={[
                     styles.markerText,
-                    isSelected ? styles.markerTextSelected : styles.markerTextDefault,
+                    isSelected
+                      ? styles.markerTextSelected
+                      : styles.markerTextDefault,
                   ]}
                 >
                   Rs. {spot.hourly_rate}
@@ -401,7 +437,17 @@ export default function ExploreScreen() {
               <Text style={styles.myBookingsText}>📋 My Bookings</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={handleLogout} style={styles.signOutButton}>
+            <TouchableOpacity
+              onPress={() => router.push('/profile' as any)}
+              style={styles.signOutButton}
+            >
+              <Text style={styles.signOutText}>👤</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={handleLogout}
+              style={styles.signOutButton}
+            >
               <Text style={styles.signOutText}>Sign Out</Text>
             </TouchableOpacity>
           </View>
@@ -420,9 +466,16 @@ export default function ExploreScreen() {
           />
 
           {searching ? (
-            <ActivityIndicator size="small" color="#10B981" style={{ marginRight: 8 }} />
+            <ActivityIndicator
+              size="small"
+              color="#10B981"
+              style={{ marginRight: 8 }}
+            />
           ) : (
-            <TouchableOpacity onPress={handleAddressSearch} style={styles.searchActionButton}>
+            <TouchableOpacity
+              onPress={handleAddressSearch}
+              style={styles.searchActionButton}
+            >
               <Text style={styles.searchActionText}>Search</Text>
             </TouchableOpacity>
           )}
@@ -439,7 +492,8 @@ export default function ExploreScreen() {
         {routeMeta ? (
           <View style={styles.routePill}>
             <Text style={styles.routePillText}>
-              🚗 {routeMeta.distanceKm} km • ~{routeMeta.durationMins} mins via OSRM
+              🚗 {routeMeta.distanceKm} km • ~{routeMeta.durationMins} mins via
+              OSRM
             </Text>
             <TouchableOpacity onPress={clearRoute} style={styles.clearRouteBtn}>
               <Text style={styles.clearRouteText}>✕</Text>
@@ -448,7 +502,8 @@ export default function ExploreScreen() {
         ) : (
           <View style={styles.spotsCountTag}>
             <Text style={styles.spotsCountText}>
-              {spots.length} {spots.length === 1 ? 'spot' : 'spots'} available nearby
+              {spots.length} {spots.length === 1 ? 'spot' : 'spots'} available
+              nearby
             </Text>
           </View>
         )}
@@ -468,23 +523,37 @@ export default function ExploreScreen() {
                   Host: {selectedSpot.host_id?.full_name || 'Verified Resident'}
                   {routeMeta ? ` • ${routeMeta.distanceKm} km away` : ''}
                 </Text>
-                <Text style={{ color: '#FBBF24', fontSize: 12, fontWeight: '700', marginTop: 2 }}>
+                <Text
+                  style={{
+                    color: '#FBBF24',
+                    fontSize: 12,
+                    fontWeight: '700',
+                    marginTop: 2,
+                  }}
+                >
                   ★{' '}
                   {selectedSpot.host_rating
                     ? `${selectedSpot.host_rating} (${selectedSpot.host_review_count} ${
-                        selectedSpot.host_review_count === 1 ? 'review' : 'reviews'
+                        selectedSpot.host_review_count === 1
+                          ? 'review'
+                          : 'reviews'
                       })`
                     : 'New Host'}
                 </Text>
                 {selectedSpot.special_instructions ? (
-                  <Text style={{ color: '#D1D5DB', fontSize: 12, marginTop: 4 }} numberOfLines={2}>
+                  <Text
+                    style={{ color: '#D1D5DB', fontSize: 12, marginTop: 4 }}
+                    numberOfLines={2}
+                  >
                     📝 {selectedSpot.special_instructions}
                   </Text>
                 ) : null}
               </View>
 
               <View style={styles.spotRateBox}>
-                <Text style={styles.spotRateText}>Rs. {selectedSpot.hourly_rate}</Text>
+                <Text style={styles.spotRateText}>
+                  Rs. {selectedSpot.hourly_rate}
+                </Text>
                 <Text style={styles.spotRateUnit}>per hour</Text>
               </View>
             </View>
@@ -492,7 +561,11 @@ export default function ExploreScreen() {
             {/* Live Availability Status Badge */}
             <View style={{ marginBottom: 10 }}>
               {loadingSchedule ? (
-                <ActivityIndicator size="small" color="#10B981" style={{ alignSelf: 'flex-start' }} />
+                <ActivityIndicator
+                  size="small"
+                  color="#10B981"
+                  style={{ alignSelf: 'flex-start' }}
+                />
               ) : (
                 <View
                   style={{
@@ -500,17 +573,23 @@ export default function ExploreScreen() {
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: 6,
-                    backgroundColor: spotAvailability?.isOccupied ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                    backgroundColor: spotAvailability?.isOccupied
+                      ? 'rgba(245, 158, 11, 0.15)'
+                      : 'rgba(16, 185, 129, 0.15)',
                     paddingHorizontal: 10,
                     paddingVertical: 5,
                     borderRadius: 10,
                     borderWidth: 1,
-                    borderColor: spotAvailability?.isOccupied ? '#F59E0B' : '#10B981',
+                    borderColor: spotAvailability?.isOccupied
+                      ? '#F59E0B'
+                      : '#10B981',
                   }}
                 >
                   <Text
                     style={{
-                      color: spotAvailability?.isOccupied ? '#FBBF24' : '#10B981',
+                      color: spotAvailability?.isOccupied
+                        ? '#FBBF24'
+                        : '#10B981',
                       fontSize: 12,
                       fontWeight: '700',
                     }}
@@ -518,15 +597,32 @@ export default function ExploreScreen() {
                     {spotAvailability?.badgeText || '🟢 Available Now'}
                   </Text>
                   {spotAvailability?.nextFreeTime && (
-                    <Text style={{ color: '#9CA3AF', fontSize: 11 }}>• {spotAvailability.nextFreeTime}</Text>
+                    <Text style={{ color: '#9CA3AF', fontSize: 11 }}>
+                      • {spotAvailability.nextFreeTime}
+                    </Text>
                   )}
                 </View>
               )}
             </View>
 
             {/* Arrival Time Slot Selector */}
-            <View style={{ marginBottom: 10, paddingTop: 8, borderTopWidth: 1, borderColor: '#374151' }}>
-              <Text style={{ color: '#9CA3AF', fontSize: 11, fontWeight: '700', textTransform: 'uppercase', marginBottom: 6 }}>
+            <View
+              style={{
+                marginBottom: 10,
+                paddingTop: 8,
+                borderTopWidth: 1,
+                borderColor: '#374151',
+              }}
+            >
+              <Text
+                style={{
+                  color: '#9CA3AF',
+                  fontSize: 11,
+                  fontWeight: '700',
+                  textTransform: 'uppercase',
+                  marginBottom: 6,
+                }}
+              >
                 Arrival Time:
               </Text>
               <View style={{ flexDirection: 'row', gap: 6 }}>
@@ -544,16 +640,25 @@ export default function ExploreScreen() {
                       paddingVertical: 7,
                       borderRadius: 10,
                       alignItems: 'center',
-                      backgroundColor: arrivalOffsetHours === item.offset ? '#10B981' : '#0B0F19',
+                      backgroundColor:
+                        arrivalOffsetHours === item.offset
+                          ? '#10B981'
+                          : '#0B0F19',
                       borderWidth: 1,
-                      borderColor: arrivalOffsetHours === item.offset ? '#10B981' : '#374151',
+                      borderColor:
+                        arrivalOffsetHours === item.offset
+                          ? '#10B981'
+                          : '#374151',
                     }}
                   >
                     <Text
                       style={{
                         fontSize: 11,
                         fontWeight: '700',
-                        color: arrivalOffsetHours === item.offset ? '#0B0F19' : '#D1D5DB',
+                        color:
+                          arrivalOffsetHours === item.offset
+                            ? '#0B0F19'
+                            : '#D1D5DB',
                       }}
                     >
                       {item.label}
@@ -568,7 +673,9 @@ export default function ExploreScreen() {
               <Text style={styles.durationLabel}>Duration:</Text>
               <View style={styles.durationControls}>
                 <TouchableOpacity
-                  onPress={() => setBookingHours((prev) => Math.max(1, prev - 1))}
+                  onPress={() =>
+                    setBookingHours((prev) => Math.max(1, prev - 1))
+                  }
                   style={styles.durationBtn}
                 >
                   <Text style={styles.durationBtnText}>-</Text>
@@ -577,7 +684,9 @@ export default function ExploreScreen() {
                 <Text style={styles.durationValText}>{bookingHours} hrs</Text>
 
                 <TouchableOpacity
-                  onPress={() => setBookingHours((prev) => Math.min(12, prev + 1))}
+                  onPress={() =>
+                    setBookingHours((prev) => Math.min(12, prev + 1))
+                  }
                   style={styles.durationBtn}
                 >
                   <Text style={styles.durationBtnText}>+</Text>
@@ -588,9 +697,25 @@ export default function ExploreScreen() {
             {/* Live Schedule & Total Fee Preview */}
             <View style={styles.totalPreviewBox}>
               <View>
-                <Text style={{ color: '#9CA3AF', fontSize: 10, textTransform: 'uppercase' }}>Time Window</Text>
-                <Text style={{ color: '#10B981', fontSize: 12, fontWeight: '700', marginTop: 2 }}>
-                  {getReservationTimes().startTimeStr} → {getReservationTimes().endTimeStr}
+                <Text
+                  style={{
+                    color: '#9CA3AF',
+                    fontSize: 10,
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  Time Window
+                </Text>
+                <Text
+                  style={{
+                    color: '#10B981',
+                    fontSize: 12,
+                    fontWeight: '700',
+                    marginTop: 2,
+                  }}
+                >
+                  {getReservationTimes().startTimeStr} →{' '}
+                  {getReservationTimes().endTimeStr}
                 </Text>
               </View>
               <View style={{ alignItems: 'flex-end' }}>
@@ -637,7 +762,9 @@ export default function ExploreScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Filter Parking Spots</Text>
 
-            <Text style={styles.filterSectionTitle}>Maximum Distance Radius</Text>
+            <Text style={styles.filterSectionTitle}>
+              Maximum Distance Radius
+            </Text>
             <View style={styles.filterRow}>
               {[5, 10, 20, 30].map((radius) => (
                 <TouchableOpacity
@@ -645,13 +772,17 @@ export default function ExploreScreen() {
                   onPress={() => setSelectedRadius(radius)}
                   style={[
                     styles.filterChip,
-                    selectedRadius === radius ? styles.filterChipActive : styles.filterChipInactive,
+                    selectedRadius === radius
+                      ? styles.filterChipActive
+                      : styles.filterChipInactive,
                   ]}
                 >
                   <Text
                     style={[
                       styles.filterChipText,
-                      selectedRadius === radius ? styles.filterChipTextActive : styles.filterChipTextInactive,
+                      selectedRadius === radius
+                        ? styles.filterChipTextActive
+                        : styles.filterChipTextInactive,
                     ]}
                   >
                     {radius} km
@@ -668,13 +799,17 @@ export default function ExploreScreen() {
                   onPress={() => setMaxPrice(price)}
                   style={[
                     styles.filterChip,
-                    maxPrice === price ? styles.filterChipActive : styles.filterChipInactive,
+                    maxPrice === price
+                      ? styles.filterChipActive
+                      : styles.filterChipInactive,
                   ]}
                 >
                   <Text
                     style={[
                       styles.filterChipText,
-                      maxPrice === price ? styles.filterChipTextActive : styles.filterChipTextInactive,
+                      maxPrice === price
+                        ? styles.filterChipTextActive
+                        : styles.filterChipTextInactive,
                     ]}
                   >
                     Rs. {price}

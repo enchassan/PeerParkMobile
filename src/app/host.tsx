@@ -415,14 +415,24 @@ export default function HostScreen() {
               {hostUser?.full_name || 'Host Dashboard'}
             </Text>
           </View>
-          <TouchableOpacity
-            onPress={handleLogout}
-            className="bg-[#1A2235] px-3.5 py-2 rounded-xl border border-gray-800"
-          >
-            <Text className="text-gray-300 text-xs font-semibold">
-              Sign Out
-            </Text>
-          </TouchableOpacity>
+          <View className="flex-row items-center gap-2">
+            <TouchableOpacity
+              onPress={() => router.push('/profile' as any)}
+              className="bg-[#1A2235] px-3 py-2 rounded-xl border border-gray-800"
+            >
+              <Text className="text-gray-200 text-xs font-semibold">
+                👤 Profile
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleLogout}
+              className="bg-[#1A2235] px-3 py-2 rounded-xl border border-gray-800"
+            >
+              <Text className="text-gray-300 text-xs font-semibold">
+                Sign Out
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Verification Status Banner */}
